@@ -32,20 +32,19 @@ echo "=============================================="
 
 # Step 1: Pull / clone code
 echo ""
-echo "[1/4] Syncing code..."
-ssh ${SERVER} bash -s << 'ENDSSH'
+echo "[1/4] Syncing code (branch: ${BRANCH})..."
+ssh ${SERVER} "BRANCH=${BRANCH}" bash -s << 'ENDSSH'
 WORK_DIR="/data"
 REPO_URL="https://github.com/Jayczee/eznebula.git"
-BRANCH="${1:-main}"
 
 if [ -d "${WORK_DIR}/eznebula/.git" ]; then
-    echo "  Pulling latest code..."
+    echo "  Repository exists, pulling ${BRANCH}..."
     cd ${WORK_DIR}/eznebula
     git fetch origin
     git checkout ${BRANCH}
     git pull origin ${BRANCH}
 else
-    echo "  Cloning repository..."
+    echo "  Cloning ${BRANCH}..."
     mkdir -p ${WORK_DIR}
     git clone -b ${BRANCH} ${REPO_URL} ${WORK_DIR}/eznebula
 fi
