@@ -68,24 +68,22 @@ public class NebulaCertService {
             binaryName = "nebula-cert";
         }
 
+        boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String exeName = isWindows ? binaryName + ".exe" : binaryName;
+
         // 1) Bundled: look next to the running JAR
         try {
             Path jarDir = Paths.get(".").toAbsolutePath();
-            Path bundled = jarDir.resolve(binaryName);
-            if (!bundled.toString().endsWith(".exe")) {
-                bundled = jarDir.resolve(binaryName + ".exe");
-            }
-            if (Files.isExecutable(bundled) || Files.isRegularFile(bundled)) {
+            Path bundled = jarDir.resolve(exeName);
+            if (Files.isRegularFile(bundled) && Files.isExecutable(bundled)) {
                 log.info("Using bundled nebula-cert: {}", bundled.toAbsolutePath());
                 return bundled;
             }
-        } catch (Exception ignored) {
-            // ignore
-        }
+        } catch (Exception ignored) {}
 
-        // 2) System PATH (keep as plain name)
-        log.info("nebula-cert not found bundled, will use PATH: {}", binaryName);
-        return Paths.get(binaryName);
+        // 2) System PATH
+        log.info("nebula-cert not found bundled, using PATH: {}", exeName);
+        return Paths.get(exeName);
     }
 
     /**

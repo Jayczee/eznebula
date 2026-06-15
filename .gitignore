@@ -46,5 +46,5 @@ Cargo.lock
 *.crt
 ca/
 
-# Node
-node_modules/
+# Deploy
+deploy.sh
