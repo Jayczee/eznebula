@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  eznebula:
+    build: .
+    container_name: eznebula
+    restart: unless-stopped
+    ports:
+      - "${EZNEBULA_PORT:-8080}:8080"
+      - "${EZNEBULA_LIGHTHOUSE_PORT:-4242}:4242/udp"
+    volumes:
+      - "${EZNEBULA_DATA_DIR:-/data/eznebula-data}:/data/eznebula-data"
+    environment:
+      - EZNEBULA_PORT=${EZNEBULA_PORT:-8080}
+      - EZNEBULA_LIGHTHOUSE_PORT=${EZNEBULA_LIGHTHOUSE_PORT:-4242}
+      - EZNEBULA_LIGHTHOUSE_IP=${EZNEBULA_LIGHTHOUSE_IP:-0.0.0.0}
+      - EZNEBULA_HOME=/data/eznebula-data
+      - JAVA_OPTS=${JAVA_OPTS:--Xms128m -Xmx256m}
+    networks:
+      - eznebula-net
+
+networks:
+  eznebula-net:
+    driver: bridge

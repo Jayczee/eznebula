@@ -1,0 +1,56 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: eznebula-backend
+
+  datasource:
+    url: jdbc:sqlite:${user.home}/.eznebula/eznebula.db
+    driver-class-name: org.sqlite.JDBC
+
+  jpa:
+    database-platform: org.hibernate.community.dialect.SQLiteDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+
+# EZNebula specific configurations
+eznebula:
+  # CA certificate and key storage path
+  ca:
+    storage-path: ${user.home}/.eznebula/ca
+    cert-file: ca.crt
+    key-file: ca.key
+    organization: eznebula
+    duration: 87600h  # 10 years
+
+  # Nebula binary path
+  nebula:
+    cert-binary: nebula-cert
+
+  # Lighthouse configuration
+  lighthouse:
+    public-ip: 127.0.0.1
+    port: 4242
+
+  # Security
+  security:
+    token-min-length: 8
+
+logging:
+  level:
+    com.eznebula: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

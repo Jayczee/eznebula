@@ -1,0 +1,36 @@
+[package]
+name = "tauri-native"
+version = "0.1.0"
+description = "EZNebula - Nebula VPN Client"
+authors = ["EZNebula Team"]
+edition = "2021"
+
+[lib]
+name = "tauri_native_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-log = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+# Nebula key generation (X25519, not Ed25519!)
+x25519-dalek = { version = "2", features = ["static_secrets"] }
+rand = "0.8"
+base64 = "0.22"
+
+# HTTP client for joining network
+reqwest = { version = "0.12", features = ["json"] }
+
+# Misc
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+uuid = { version = "1", features = ["v4"] }
+dirs = "5"
+which = "6"
