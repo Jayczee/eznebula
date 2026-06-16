@@ -1,23 +1,43 @@
-import { StrictMode } from "react"
+import { StrictMode, lazy, Suspense } from "react"
 import { createRoot } from "react-dom/client"
-
 import "./index.css"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
-import { ExternalLinkGuard } from "./components/external-link-guard.tsx"
-import { DebugPanel } from "./components/debug-panel.tsx"
 import { Toaster } from "@/components/ui/sonner"
 
-// Prevent right-click context menu
 document.addEventListener("contextmenu", (e) => e.preventDefault())
+document.addEventListener("keydown", (e) => {
+  if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r"))
+    e.preventDefault()
+})
+
+const PeersWindow = lazy(() => import("./components/peers-window.tsx"))
+const LogsWindow = lazy(() => import("./components/logs-window.tsx"))
+const ServersWindow = lazy(() => import("./components/servers-window.tsx"))
+
+function WindowRouter() {
+  const params = new URLSearchParams(window.location.search)
+  const view = params.get("view")
+  const loading = (
+    <main className="h-screen bg-background flex items-center justify-center">
+      <p className="text-xs text-muted-foreground">加载中...</p>
+    </main>
+  )
+  return (
+    <Suspense fallback={loading}>
+      {view === "peers" ? <PeersWindow /> :
+       view === "logs" ? <LogsWindow /> :
+       view === "servers" ? <ServersWindow /> :
+       <App />}
+    </Suspense>
+  )
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <ThemeProvider>
-      <ExternalLinkGuard />
-      {import.meta.env.DEV ? <DebugPanel /> : null}
-      <main data-ui-scroll-container><App /></main>
+      <WindowRouter />
       <Toaster position="top-center" richColors />
     </ThemeProvider>
-  </StrictMode>
+  </StrictMode>,
 )

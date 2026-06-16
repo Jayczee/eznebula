@@ -49,4 +49,7 @@ export const eznebulaApi = {
 
   deleteServer: (id: string) =>
     invoke<void>("delete_server", { id }),
+
+  openWindow: (view: string, title: string, width: number, height: number) =>
+    invoke<void>("open_window", { view, title, width, height }),
 }

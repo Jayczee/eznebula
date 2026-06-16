@@ -94,16 +94,19 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon-xs" title="服务器列表">
+          <Button variant="ghost" size="icon-xs" title="服务器列表"
+            onClick={() => eznebulaApi.openWindow("servers", "服务器列表", 520, 480)}>
             <Server className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" title="在线客户端">
+          <Button variant="ghost" size="icon-xs" title="在线客户端"
+            onClick={() => eznebulaApi.openWindow("peers", "在线客户端", 380, 480)}>
             <Users className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon-xs" title="设置">
             <Settings className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" title="运行日志">
+          <Button variant="ghost" size="icon-xs" title="运行日志"
+            onClick={() => eznebulaApi.openWindow("logs", "运行日志", 520, 500)}>
             <ScrollText className="size-3.5" />
           </Button>
         </div>

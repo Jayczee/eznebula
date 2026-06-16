@@ -10,6 +10,24 @@ use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_log::{Target, TargetKind};
 
+#[tauri::command]
+fn open_window(app: tauri::AppHandle, view: String, title: String, width: f64, height: f64) -> Result<(), String> {
+    let label = format!("sub_{}", view);
+    if let Some(w) = app.get_webview_window(&label) {
+        let _ = w.set_focus();
+        return Ok(());
+    }
+    let url = format!("index.html?view={}", view);
+    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
+        .title(title)
+        .inner_size(width, height)
+        .center()
+        .resizable(true)
+        .build()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn external_navigation_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::<R>::new("external-navigation")
         .on_navigation(|webview, url| {
@@ -57,6 +75,7 @@ pub fn run() {
             network::save_server,
             network::get_servers,
             network::delete_server,
+            open_window,
         ])
         .on_page_load(|webview, payload| {
             if webview.label() == "main" && matches!(payload.event(), PageLoadEvent::Finished) {
