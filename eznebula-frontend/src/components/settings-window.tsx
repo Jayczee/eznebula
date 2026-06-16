@@ -1,20 +1,16 @@
 import { useState, useEffect } from "react"
+import { eznebulaApi } from "@/lib/api"
 
 export default function SettingsWindow() {
   const [closeBehavior, setCloseBehavior] = useState("minimize")
 
   useEffect(() => {
-    import("@/lib/api").then(({ eznebulaApi }) => {
-      eznebulaApi.getCloseBehavior().then(setCloseBehavior).catch(() => {})
-    })
+    eznebulaApi.getCloseBehavior().then(setCloseBehavior).catch(() => {})
   }, [])
 
   const handleSet = async (b: string) => {
     setCloseBehavior(b)
-    try {
-      const { eznebulaApi } = await import("@/lib/api")
-      await eznebulaApi.setCloseBehavior(b)
-    } catch { /* ignore */ }
+    try { await eznebulaApi.setCloseBehavior(b) } catch { /* ignore */ }
   }
 
   return (

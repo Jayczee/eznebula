@@ -34,14 +34,8 @@ fn open_window(app: tauri::AppHandle, view: String, title: String, width: f64, h
         let _ = w.set_focus();
         return Ok(());
     }
-    let webview_url = if cfg!(dev) {
-        let u = format!("http://localhost:1421/index.html?view={}", view);
-        tauri::WebviewUrl::External(u.parse::<url::Url>().map_err(|e| e.to_string())?)
-    } else {
-        tauri::WebviewUrl::App(format!("index.html?view={}", view).into())
-    };
-
-    tauri::WebviewWindowBuilder::new(&app, &label, webview_url)
+    let url = format!("index.html?view={}", view);
+    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
         .title(title)
         .inner_size(width, height)
         .center()

@@ -1,41 +1,42 @@
-import { StrictMode, Component, type ReactNode } from "react"
+import { StrictMode, lazy, Suspense } from "react"
 import { createRoot } from "react-dom/client"
+
 import "./index.css"
 import App from "./App.tsx"
 import { ThemeProvider } from "@/components/theme-provider.tsx"
 import { Toaster } from "@/components/ui/sonner"
-import LogsWindow from "./components/logs-window.tsx"
-import PeersWindow from "./components/peers-window.tsx"
-import ServersWindow from "./components/servers-window.tsx"
-import SettingsWindow from "./components/settings-window.tsx"
 
-document.addEventListener("contextmenu", (e) => e.preventDefault())
-document.addEventListener("keydown", (e) => {
-  if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r"))
+// 禁用右键菜单和刷新快捷键（所有窗口生效）
+window.addEventListener("contextmenu", (e) => e.preventDefault())
+window.addEventListener("keydown", (e) => {
+  if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "r")) {
     e.preventDefault()
+  }
 })
 
-// Error boundary to catch crashes in sub-windows
-class ErrorBoundary extends Component<{ children: ReactNode }, { err: string | null }> {
-  state = { err: null as string | null }
-  static getDerivedStateFromError(e: Error) { return { err: e.message } }
-  render() {
-    if (this.state.err) return <main className="h-screen bg-background flex items-center justify-center"><p className="text-xs text-red-500">{this.state.err}</p></main>
-    return this.props.children
-  }
-}
+const PeersWindow = lazy(() => import("./components/peers-window.tsx"))
+const LogsWindow = lazy(() => import("./components/logs-window.tsx"))
+const ServersWindow = lazy(() => import("./components/servers-window.tsx"))
+const SettingsWindow = lazy(() => import("./components/settings-window.tsx"))
 
 function WindowRouter() {
   const params = new URLSearchParams(window.location.search)
   const view = params.get("view")
+
+  const loading = (
+    <main className="h-screen bg-background flex items-center justify-center">
+      <p className="text-xs text-muted-foreground">加载中...</p>
+    </main>
+  )
+
   return (
-    <ErrorBoundary>
+    <Suspense fallback={loading}>
       {view === "peers" ? <PeersWindow /> :
        view === "logs" ? <LogsWindow /> :
        view === "servers" ? <ServersWindow /> :
        view === "settings" ? <SettingsWindow /> :
        <App />}
-    </ErrorBoundary>
+    </Suspense>
   )
 }
 
@@ -45,5 +46,5 @@ createRoot(document.getElementById("root")!).render(
       <WindowRouter />
       <Toaster position="top-center" richColors />
     </ThemeProvider>
-  </StrictMode>,
+  </StrictMode>
 )
