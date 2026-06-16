@@ -157,7 +157,7 @@ public class NebulaCertService {
             command.add("-out-crt");
             command.add(tempCertPath.toString());
             command.add("-duration");
-            command.add("2160h"); // 90 days, comfortably within CA's 10yr validity
+            command.add("8760h"); // 1 year, re-signed on every reconnect anyway
 
             if (groups != null && !groups.isEmpty()) {
                 command.add("-groups");
