@@ -5,8 +5,7 @@ mod network;
 mod state;
 
 use state::AppState;
-use tauri::Manager;
-use tauri::Emitter;
+use tauri::{Manager, Emitter};
 use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_log::{Target, TargetKind};
@@ -23,9 +22,7 @@ fn get_close_behavior(state: tauri::State<AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn quit_app(app: tauri::AppHandle) {
-    app.exit(0);
-}
+fn quit_app(app: tauri::AppHandle) { app.exit(0); }
 
 #[tauri::command]
 fn open_window(app: tauri::AppHandle, view: String, title: String, width: f64, height: f64) -> Result<(), String> {
@@ -34,57 +31,38 @@ fn open_window(app: tauri::AppHandle, view: String, title: String, width: f64, h
         let _ = w.set_focus();
         return Ok(());
     }
-    let url = format!("http://localhost:1421/index.html?view={}", view);
-    log::info!("Opening sub-window: label={}, url={}", label, url);
-    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::External(url.parse().map_err(|e| format!("URL parse: {}", e))?))
-        .title(title)
-        .inner_size(width, height)
-        .center()
-        .resizable(true)
-        .build()
-        .map_err(|e| format!("Window build: {}", e))?;
-    log::info!("Window opened: {}", label);
+    let url = format!("index.html?view={}", view);
+    tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
+        .title(title).inner_size(width, height).center().resizable(true)
+        .build().map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn external_navigation_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     tauri::plugin::Builder::<R>::new("external-navigation")
         .on_navigation(|webview, url| {
-            let is_internal_host = matches!(
-                url.host_str(),
-                Some("localhost") | Some("127.0.0.1") | Some("tauri.localhost") | Some("::1")
-            );
-            let is_internal = url.scheme() == "tauri" || is_internal_host;
-            if is_internal { return true; }
-            let is_external = matches!(url.scheme(), "http" | "https" | "mailto" | "tel");
-            if is_external {
-                log::info!("opening external link: {}", url);
+            let is_internal_host = matches!(url.host_str(), Some("localhost") | Some("127.0.0.1") | Some("tauri.localhost") | Some("::1"));
+            if url.scheme() == "tauri" || is_internal_host { return true; }
+            if matches!(url.scheme(), "http" | "https" | "mailto" | "tel") {
+                log::info!("external link: {}", url);
                 let _ = webview.opener().open_url(url.as_str(), None::<&str>);
                 return false;
             }
             true
-        })
-        .build()
+        }).build()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(
-            tauri_plugin_log::Builder::new()
-                .targets([
-                    Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: None }),
-                    Target::new(TargetKind::Webview),
-                ])
-                .build(),
-        )
+        .plugin(tauri_plugin_log::Builder::new().targets([
+            Target::new(TargetKind::Stdout),
+            Target::new(TargetKind::LogDir { file_name: None }),
+            Target::new(TargetKind::Webview),
+        ]).build())
         .plugin(tauri_plugin_opener::init())
         .plugin(external_navigation_plugin())
-        .setup(|app| {
-            app.manage(AppState::new());
-            Ok(())
-        })
+        .setup(|app| { app.manage(AppState::new()); Ok(()) })
         .invoke_handler(tauri::generate_handler![
             crypto::generate_keypair,
             nebula::join_network,
@@ -102,21 +80,15 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" {
-                    let state = window.state::<AppState>();
-                    let behavior = state.close_behavior.lock().unwrap().clone();
-                    if behavior == "close" {
-                        let _ = window.emit("confirm-close", ());
-                        api.prevent_close();
-                    } else {
-                        let _ = window.hide();
-                        api.prevent_close();
-                    }
+                    let behavior = window.state::<AppState>().close_behavior.lock().unwrap().clone();
+                    if behavior == "close" { let _ = window.emit("confirm-close", ()); }
+                    else { let _ = window.hide(); }
+                    api.prevent_close();
                 }
             }
         })
         .on_page_load(|webview, payload| {
             if webview.label() == "main" && matches!(payload.event(), PageLoadEvent::Finished) {
-                log::info!("main webview loaded");
                 let _ = webview.window().show();
             }
         })

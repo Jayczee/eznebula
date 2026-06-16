@@ -2,11 +2,11 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EZNebula",
   "version": "1.0.0",
-  "identifier": "com.eznebula.app",
+  "identifier": "cn.jayczee.eznebula",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1421",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -19,30 +19,20 @@
         "center": true,
         "resizable": false,
         "maximizable": false,
-        "visible": true
+        "visible": false
       }
     ],
-    "security": {
-      "csp": null
-    }
+    "security": { "csp": null }
   },
   "bundle": {
     "active": true,
     "targets": "all",
-    "resources": {
-      "binaries/*": "./"
-    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "windows": {
-      "nsis": {
-        "installMode": "currentUser"
-      }
-    }
+    ]
   }
 }
