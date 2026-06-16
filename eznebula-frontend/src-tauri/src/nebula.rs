@@ -112,7 +112,7 @@ pub async fn join_network(state: State<'_, AppState>, request: JoinRequest) -> R
     // The cert's notBefore is set by the server's clock — if the server
     // is slightly ahead, the cert may appear "not yet valid" when nebula
     // checks it immediately. A few seconds covers typical NTP drift.
-    std::thread::sleep(std::time::Duration::from_secs(3));
+    std::thread::sleep(std::time::Duration::from_secs(1));
 
     // 5. Start Nebula (parent process is admin → child inherits admin rights)
     let nebula = find_nebula()?;
