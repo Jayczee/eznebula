@@ -156,10 +156,8 @@ public class NebulaCertService {
             command.add(tempPubKeyPath.toString());
             command.add("-out-crt");
             command.add(tempCertPath.toString());
-            // Client cert must expire BEFORE the CA cert — subtract 100h safety margin.
-            String clientDuration = reduceDuration(properties.getCa().getDuration(), 100);
             command.add("-duration");
-            command.add(clientDuration);
+            command.add("2160h"); // 90 days, comfortably within CA's 10yr validity
 
             if (groups != null && !groups.isEmpty()) {
                 command.add("-groups");
@@ -231,20 +229,6 @@ public class NebulaCertService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new CertificateException(errorMessage, e);
-        }
-    }
-
-    /**
-     * Reduce a duration string like "87600h" by a number of hours.
-     * Ensures client certs expire before the CA cert.
-     */
-    private String reduceDuration(String duration, int subtractHours) {
-        try {
-            String num = duration.replaceAll("[^0-9]", "");
-            long hours = Long.parseLong(num);
-            return Math.max(1, hours - subtractHours) + "h";
-        } catch (NumberFormatException e) {
-            return duration;
         }
     }
 
