@@ -35,13 +35,19 @@ fn open_window(app: tauri::AppHandle, view: String, title: String, width: f64, h
         return Ok(());
     }
     let url = format!("index.html?view={}", view);
+    log::info!("Opening sub-window: label={}, url={}", label, url);
     tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(url.into()))
         .title(title)
         .inner_size(width, height)
         .center()
         .resizable(true)
+        .visible(true)
         .build()
-        .map_err(|e| e.to_string())?;
+        .inspect(|_| log::info!("Window created successfully"))
+        .map_err(|e| {
+            log::error!("Failed to create window: {}", e);
+            e.to_string()
+        })?;
     Ok(())
 }
 
