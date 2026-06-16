@@ -108,6 +108,12 @@ pub async fn join_network(state: State<'_, AppState>, request: JoinRequest) -> R
     fs::write(&config_path, yml).map_err(|e| e.to_string())?;
     log::info!("Config written to: {}", config_path.display());
 
+    // Small delay to tolerate client-server clock skew.
+    // The cert's notBefore is set by the server's clock — if the server
+    // is slightly ahead, the cert may appear "not yet valid" when nebula
+    // checks it immediately. A few seconds covers typical NTP drift.
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
     // 5. Start Nebula (parent process is admin → child inherits admin rights)
     let nebula = find_nebula()?;
     let nebula_dir = nebula.parent().unwrap_or_else(|| std::path::Path::new("."));
@@ -136,6 +142,9 @@ pub async fn join_network(state: State<'_, AppState>, request: JoinRequest) -> R
             }
         });
     }
+
+    // Small delay to ensure cert notBefore has passed (clock skew tolerance)
+    std::thread::sleep(std::time::Duration::from_secs(2));
 
     log::info!("Nebula started, PID: {}", child.id());
 
