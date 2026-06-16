@@ -10,6 +10,7 @@ pub struct AppState {
     pub connection_time: Arc<Mutex<Option<Instant>>>,
     pub nebula_process: Arc<Mutex<Option<std::process::Child>>>,
     pub last_stats: Arc<Mutex<HashMap<String, (u64, u64)>>>,
+    pub close_behavior: Arc<Mutex<String>>,
 }
 
 impl AppState {
@@ -26,6 +27,7 @@ impl AppState {
             connection_time: Arc::new(Mutex::new(None)),
             nebula_process: Arc::new(Mutex::new(None)),
             last_stats: Arc::new(Mutex::new(HashMap::new())),
+            close_behavior: Arc::new(Mutex::new("minimize".to_string())),
         }
     }
 }

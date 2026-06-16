@@ -52,4 +52,13 @@ export const eznebulaApi = {
 
   openWindow: (view: string, title: string, width: number, height: number) =>
     invoke<void>("open_window", { view, title, width, height }),
+
+  setCloseBehavior: (behavior: string) =>
+    invoke<void>("set_close_behavior", { behavior }),
+
+  getCloseBehavior: () =>
+    invoke<string>("get_close_behavior"),
+
+  quitApp: () =>
+    invoke<void>("quit_app"),
 }

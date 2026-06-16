@@ -14,6 +14,7 @@ document.addEventListener("keydown", (e) => {
 const PeersWindow = lazy(() => import("./components/peers-window.tsx"))
 const LogsWindow = lazy(() => import("./components/logs-window.tsx"))
 const ServersWindow = lazy(() => import("./components/servers-window.tsx"))
+const SettingsWindow = lazy(() => import("./components/settings-window.tsx"))
 
 function WindowRouter() {
   const params = new URLSearchParams(window.location.search)
@@ -28,6 +29,7 @@ function WindowRouter() {
       {view === "peers" ? <PeersWindow /> :
        view === "logs" ? <LogsWindow /> :
        view === "servers" ? <ServersWindow /> :
+       view === "settings" ? <SettingsWindow /> :
        <App />}
     </Suspense>
   )

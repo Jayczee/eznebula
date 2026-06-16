@@ -6,6 +6,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { ScrollText, Users, Plug, PlugZap, Server, Settings, ArrowUp, ArrowDown } from "lucide-react"
+import { listen } from "@tauri-apps/api/event"
 import { eznebulaApi, type NetworkStatus, type NetworkStats } from "@/lib/api"
 
 type ConnState = "idle" | "connecting" | "connected" | "stopping"
@@ -32,9 +33,16 @@ export default function App() {
   const [speedRx, setSpeedRx] = useState(0)
   const [speedTx, setSpeedTx] = useState(0)
 
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false)
   const [errorOpen, setErrorOpen] = useState(false)
   const [errorTitle, setErrorTitle] = useState("")
   const [errorMessage, setErrorMessage] = useState("")
+
+  // Listen for close confirmation from Rust backend
+  useEffect(() => {
+    const unlisten = listen("confirm-close", () => setConfirmCloseOpen(true))
+    return () => { unlisten.then(f => f()) }
+  }, [])
 
   const isConnected = connState === "connected"
   const isConnecting = connState === "connecting"
@@ -102,7 +110,8 @@ export default function App() {
             onClick={() => eznebulaApi.openWindow("peers", "在线客户端", 380, 480)}>
             <Users className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon-xs" title="设置">
+          <Button variant="ghost" size="icon-xs" title="设置"
+            onClick={() => eznebulaApi.openWindow("settings", "设置", 420, 400)}>
             <Settings className="size-3.5" />
           </Button>
           <Button variant="ghost" size="icon-xs" title="运行日志"
@@ -185,6 +194,21 @@ export default function App() {
           <span className="text-blue-600 shrink-0 font-semibold">
             {fmtBytes(speedTx)}/s
           </span>
+        </div>
+      )}
+
+      {/* ---- 关闭确认弹窗 ---- */}
+      {confirmCloseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmCloseOpen(false)} />
+          <div className="relative bg-background rounded-lg border shadow-lg w-72 p-4">
+            <h3 className="text-sm font-semibold mb-1">退出 EZNebula</h3>
+            <p className="text-xs text-muted-foreground mb-3">确定要退出程序吗？退出后连接将断开。</p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="xs" onClick={() => setConfirmCloseOpen(false)}>取消</Button>
+              <Button variant="destructive" size="xs" onClick={() => eznebulaApi.quitApp()}>退出</Button>
+            </div>
+          </div>
         </div>
       )}
 

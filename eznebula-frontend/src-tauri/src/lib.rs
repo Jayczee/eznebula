@@ -6,9 +6,26 @@ mod state;
 
 use state::AppState;
 use tauri::Manager;
+use tauri::Emitter;
 use tauri::webview::PageLoadEvent;
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_log::{Target, TargetKind};
+
+#[tauri::command]
+fn set_close_behavior(state: tauri::State<AppState>, behavior: String) -> Result<(), String> {
+    *state.close_behavior.lock().map_err(|e| e.to_string())? = behavior;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_close_behavior(state: tauri::State<AppState>) -> Result<String, String> {
+    state.close_behavior.lock().map_err(|e| e.to_string()).map(|b| b.clone())
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
 
 #[tauri::command]
 fn open_window(app: tauri::AppHandle, view: String, title: String, width: f64, height: f64) -> Result<(), String> {
@@ -76,7 +93,25 @@ pub fn run() {
             network::get_servers,
             network::delete_server,
             open_window,
+            set_close_behavior,
+            get_close_behavior,
+            quit_app,
         ])
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    let state = window.state::<AppState>();
+                    let behavior = state.close_behavior.lock().unwrap().clone();
+                    if behavior == "close" {
+                        let _ = window.emit("confirm-close", ());
+                        api.prevent_close();
+                    } else {
+                        let _ = window.hide();
+                        api.prevent_close();
+                    }
+                }
+            }
+        })
         .on_page_load(|webview, payload| {
             if webview.label() == "main" && matches!(payload.event(), PageLoadEvent::Finished) {
                 log::info!("main webview loaded");
