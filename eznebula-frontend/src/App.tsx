@@ -18,7 +18,7 @@ function fmtBytes(b: number) {
 }
 
 export default function App() {
-  const [serverUrl, setServerUrl] = useState("http://116.62.206.205:52346")
+  const [serverUrl, setServerUrl] = useState("")
   const [groupName, setGroupName] = useState("")
   const [clientName, setClientName] = useState(() => { const t = new Date(); return `pc-${t.getHours().toString().padStart(2,"0")}${t.getMinutes().toString().padStart(2,"0")}` })
   const [forceRelay, setForceRelay] = useState(false)
@@ -66,7 +66,9 @@ export default function App() {
   }, [idle])
 
   const handleSelectServer = useCallback((s: ServerEntry) => {
-    setServerUrl(`http://${s.address}:${s.port}`)
+    const proto = s.port === 443 ? "https" : "http"
+    const portSuffix = (proto === "https" && s.port === 443) || (proto === "http" && s.port === 80) ? "" : `:${s.port}`
+    setServerUrl(`${proto}://${s.address}${portSuffix}`)
     if (s.default_group) setGroupName(s.default_group)
     if (s.default_device) setClientName(s.default_device)
     setServerDropdownOpen(false)
@@ -97,7 +99,7 @@ export default function App() {
           <div className="relative">
             <Input
               ref={serverInputRef}
-              placeholder="http://server:52346"
+              placeholder="https://nebula.jayczee.cn 或 http://1.2.3.4:52346"
               value={serverUrl}
               onChange={e => setServerUrl(e.target.value)}
               onFocus={handleServerInputFocus}

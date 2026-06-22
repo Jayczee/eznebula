@@ -9,10 +9,32 @@ interface Props {
   onSave: (name: string, address: string, port: number, defaultGroup: string, defaultDevice: string) => void
 }
 
+/** 从地址字符串中解析主机名和端口。支持 host:port、https://host:port、纯域名/IP */
+function parseAddress(input: string): { host: string; port: number } {
+  let s = input.trim()
+  // 去掉协议前缀
+  if (s.includes("://")) {
+    s = s.split("://")[1]
+  }
+  // 去掉尾部路径
+  if (s.includes("/")) {
+    s = s.split("/")[0]
+  }
+  // 分离端口：查找最后一个冒号（排除 IPv6）
+  const lastColon = s.lastIndexOf(":")
+  if (lastColon > 0 && !s.substring(0, lastColon).includes("[")) {
+    const port = parseInt(s.substring(lastColon + 1), 10)
+    if (!isNaN(port) && port >= 1 && port <= 65535) {
+      return { host: s.substring(0, lastColon), port }
+    }
+  }
+  // 默认端口 443 (HTTPS)
+  return { host: s, port: 443 }
+}
+
 export function ServerForm({ open, onClose, onSave }: Props) {
   const [name, setName] = useState("")
   const [address, setAddress] = useState("")
-  const [port, setPort] = useState("")
   const [defaultGroup, setDefaultGroup] = useState("")
   const [defaultDevice, setDefaultDevice] = useState("")
   const [error, setError] = useState("")
@@ -21,7 +43,6 @@ export function ServerForm({ open, onClose, onSave }: Props) {
     if (open) {
       setName("")
       setAddress("")
-      setPort("")
       setDefaultGroup("")
       setDefaultDevice("")
       setError("")
@@ -32,11 +53,8 @@ export function ServerForm({ open, onClose, onSave }: Props) {
 
   const handleSave = () => {
     if (!address.trim()) { setError("地址不能为空"); return }
-    if (!port.trim() || isNaN(Number(port))) { setError("端口号必须为数字"); return }
-    const portNum = Number(port)
-    if (portNum < 1 || portNum > 65535) { setError("端口号范围 1-65535"); return }
-
-    onSave(name.trim() || address.trim(), address.trim(), portNum, defaultGroup.trim(), defaultDevice.trim())
+    const { host, port } = parseAddress(address)
+    onSave(name.trim() || host, host, port, defaultGroup.trim(), defaultDevice.trim())
   }
 
   return (
@@ -52,12 +70,8 @@ export function ServerForm({ open, onClose, onSave }: Props) {
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="例如：公司服务器" className="h-7 text-xs" />
           </div>
           <div>
-            <Label className="text-[10px]">地址 *</Label>
-            <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="116.62.206.205" className="h-7 text-xs" />
-          </div>
-          <div>
-            <Label className="text-[10px]">端口号 *</Label>
-            <Input value={port} onChange={e => setPort(e.target.value)} placeholder="52346" className="h-7 text-xs" />
+            <Label className="text-[10px]">地址 * <span className="text-muted-foreground">(可含端口，如 host:52346)</span></Label>
+            <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="nebula.jayczee.cn 或 1.2.3.4:52346" className="h-7 text-xs" />
           </div>
           <div>
             <Label className="text-[10px]">默认组名 <span className="text-muted-foreground">(可选)</span></Label>
