@@ -114,7 +114,8 @@ public class LighthouseService {
         Files.writeString(tempPub, pubPem, StandardCharsets.UTF_8);
         try {
             String lhIp = properties.getLighthouse().getNebulaIp();
-            String lhCidr = lhIp + "/24";
+            // /16 covers all client subnets (each group gets a /24 within 10.168.0.0/16)
+            String lhCidr = lhIp + "/16";
             certService.ensureCA();
             runNebulaCert("sign",
                     "-ca-crt", certService.getCaCertPath().toString(),
