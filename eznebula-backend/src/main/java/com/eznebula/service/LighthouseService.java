@@ -146,7 +146,12 @@ public class LighthouseService {
                   host: 0.0.0.0
                   port: %d
                 tun:
-                  disabled: true
+                  disabled: false
+                  dev: nebula-lh
+                  drop_local_broadcast: false
+                  drop_multicast: false
+                  tx_queue: 500
+                  mtu: 1300
                 logging:
                   level: debug
                   format: text
