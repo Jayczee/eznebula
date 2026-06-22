@@ -59,39 +59,6 @@ fn extract_embedded_binaries(app_handle: &tauri::AppHandle) -> Result<PathBuf, S
     Err("Not implemented for non-Windows platforms".to_string())
 }
 
-/// 从 virtual_ip_with_cidr (如 "10.168.2.32/24") 计算网络 CIDR ("10.168.2.0/24")
-fn compute_network_cidr(cidr: &str) -> String {
-    let parts: Vec<&str> = cidr.split('/').collect();
-    let ip_str = parts[0];
-    let prefix: u8 = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(24);
-
-    let ip_parts: Vec<u8> = ip_str.split('.').filter_map(|p| p.parse().ok()).collect();
-    if ip_parts.len() != 4 {
-        return "0.0.0.0/24".to_string();
-    }
-
-    let ip_u32 = ((ip_parts[0] as u32) << 24)
-        | ((ip_parts[1] as u32) << 16)
-        | ((ip_parts[2] as u32) << 8)
-        | (ip_parts[3] as u32);
-
-    let mask = if prefix >= 32 {
-        0xFFFFFFFFu32
-    } else {
-        !((1u32 << (32 - prefix)) - 1)
-    };
-
-    let net_u32 = ip_u32 & mask;
-    format!(
-        "{}.{}.{}.{}/{}",
-        (net_u32 >> 24) as u8,
-        (net_u32 >> 16) as u8,
-        (net_u32 >> 8) as u8,
-        net_u32 as u8,
-        prefix
-    )
-}
-
 fn find_nebula(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     // 1. 优先使用嵌入的二进制文件（生产环境）
     if let Ok(path) = extract_embedded_binaries(app_handle) {
@@ -145,17 +112,6 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     fs::write(&cert_p, &d.client_certificate).map_err(|e| e.to_string())?;
     fs::write(&key_p, &kp.private_key).map_err(|e| e.to_string())?;
 
-    // 计算路由 CIDR：优先用服务器返回的 network_cidr，否则从 IP 推导
-    let route_cidr = if !d.network_cidr.is_empty() {
-        d.network_cidr.clone()
-    } else {
-        // 从 virtual_ip_with_cidr 计算网络地址 (e.g. "10.168.2.32/24" -> "10.168.2.0/24")
-        compute_network_cidr(&d.virtual_ip_with_cidr)
-    };
-
-    // 提取纯 IP（去掉 CIDR 后缀）作为 via
-    let via_ip = d.virtual_ip_with_cidr.split('/').next().unwrap_or("0.0.0.0").to_string();
-
     let lh_addr = format!("{}:{}", d.lighthouse_ip, d.lighthouse_port);
     let yml = format!(
         "pki:\n  ca: \"{}\"\n  cert: \"{}\"\n  key: \"{}\"\n\
@@ -164,7 +120,7 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
          listen:\n  host: 0.0.0.0\n  port: 0\n\
          punchy:\n  punch: true\n  respond: true\n\
          relay:\n  am_relay: false\n  use_relays: true\n\
-         tun:\n  disabled: false\n  dev: eznebula0\n  drop_local_broadcast: false\n  drop_multicast: false\n  tx_queue: 500\n  mtu: 1300\n  unsafe_routes:\n    - route: {}\n      via: {}\n\
+         tun:\n  disabled: false\n  dev: eznebula0\n  drop_local_broadcast: false\n  drop_multicast: false\n  tx_queue: 500\n  mtu: 1300\n\
          logging:\n  level: debug\n  format: text\n  file: \"{}\"\n\
          firewall:\n  outbound:\n    - port: any\n      proto: any\n      host: any\n  inbound:\n    - port: any\n      proto: any\n      host: any\n",
         ca_p.to_string_lossy().replace('\\', "/"),
@@ -172,7 +128,6 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         key_p.to_string_lossy().replace('\\', "/"),
         d.lighthouse_nebula_ip, lh_addr,
         d.lighthouse_nebula_ip,
-        route_cidr, via_ip,
         cfg.join("nebula.log").to_string_lossy().replace('\\', "/"),
     );
     fs::write(&yml_p, yml).map_err(|e| e.to_string())?;
