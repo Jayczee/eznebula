@@ -51,6 +51,7 @@ export const eznebulaApi = {
   getStatus: () => invoke<NetworkStatus>("get_status"),
   getNetworkStats: () => invoke<NetworkStats>("get_network_stats"),
   getPeers: () => invoke<PeerInfo[]>("get_peers"),
+  discoverPeers: () => invoke<void>("discover_peers"),
   saveServer: (name: string, address: string, port: number, defaultGroup: string, defaultDevice: string) =>
     invoke<ServerEntry>("save_server", { name, address, port, defaultGroup, defaultDevice }),
   getServers: () => invoke<ServerEntry[]>("get_servers"),

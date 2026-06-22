@@ -32,7 +32,10 @@ export default function PeersWindow() {
   // Poll status every 3s
   const refresh = useCallback(async () => {
     setRefreshing(true)
-    try { setStatus(await eznebulaApi.getStatus()) } catch {}
+    try {
+      setStatus(await eznebulaApi.getStatus())
+      await eznebulaApi.discoverPeers()
+    } catch {}
     setRefreshing(false)
   }, [])
 
@@ -119,18 +122,14 @@ export default function PeersWindow() {
                   </div>
                 </div>
                 {/* 流量 */}
-                <div className="flex items-center gap-3 text-[10px]">
-                  <span className="flex items-center gap-0.5 text-green-600">
-                    <ArrowDown className="size-2.5" />
-                    {fmtBytes(peer.rx_bytes)}
-                  </span>
-                  <span className="text-green-600 font-semibold">{fmtSpeed(peer.rx_speed)}</span>
-                  <span className="flex items-center gap-0.5 text-blue-600">
-                    <ArrowUp className="size-2.5" />
-                    {fmtBytes(peer.tx_bytes)}
-                  </span>
-                  <span className="text-blue-600 font-semibold">{fmtSpeed(peer.tx_speed)}</span>
-                </div>
+                {(peer.rx_bytes > 0 || peer.tx_bytes > 0) && (
+                  <div className="flex items-center gap-3 text-[10px]">
+                    <span className="flex items-center gap-0.5 text-green-600"><ArrowDown className="size-2.5"/>{fmtBytes(peer.rx_bytes)}</span>
+                    <span className="text-green-600 font-semibold">{fmtSpeed(peer.rx_speed)}</span>
+                    <span className="flex items-center gap-0.5 text-blue-600"><ArrowUp className="size-2.5"/>{fmtBytes(peer.tx_bytes)}</span>
+                    <span className="text-blue-600 font-semibold">{fmtSpeed(peer.tx_speed)}</span>
+                  </div>
+                )}
               </div>
             ))}
             {/* 底部信息 */}

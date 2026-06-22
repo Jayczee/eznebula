@@ -120,17 +120,15 @@ fn read_tun_bytes() -> Result<(u64, u64), String> {
     { Ok((0, 0)) }
 }
 
-// ---- Per-peer traffic tracking (方案B: raw socket on Linux, proportional on Windows) ----
+// ---- Per-peer traffic tracking: pcap on Linux, none on Windows ----
 
 #[cfg(target_os = "linux")]
 mod peer_traffic {
     use std::collections::HashMap;
-    use std::io::Read;
-    use std::os::unix::io::FromRawFd;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     pub struct PeerTrafficTracker {
-        counters: Arc<Mutex<HashMap<String, (u64, u64)>>>, // vpn_ip -> (rx, tx)
+        pub counters: Arc<Mutex<HashMap<String, (u64, u64)>>>, // vpn_ip -> (rx_bytes, tx_bytes)
     }
 
     impl PeerTrafficTracker {
@@ -138,78 +136,58 @@ mod peer_traffic {
             let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
             let c = counters.clone();
             let iface = iface.to_string();
+
             std::thread::spawn(move || {
-                // Open AF_PACKET raw socket on the TUN interface
-                let sock = unsafe {
-                    let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW, (libc::ETH_P_ALL as u16).to_be() as i32);
-                    if fd < 0 { log::error!("Failed to create AF_PACKET socket"); return; }
-                    // Bind to the TUN interface
-                    let if_idx = get_iface_index(&iface);
-                    if if_idx == 0 { log::warn!("TUN iface {} not found for traffic tracking", iface); unsafe { libc::close(fd); } return; }
-                    let mut addr: libc::sockaddr_ll = unsafe { std::mem::zeroed() };
-                    addr.sll_family = libc::AF_PACKET as u16;
-                    addr.sll_protocol = (libc::ETH_P_ALL as u16).to_be();
-                    addr.sll_ifindex = if_idx as i32;
-                    let ret = unsafe {
-                        libc::bind(fd, &addr as *const _ as *const libc::sockaddr, std::mem::size_of::<libc::sockaddr_ll>() as u32)
-                    };
-                    if ret < 0 { log::error!("Failed to bind raw socket to {}", iface); unsafe { libc::close(fd); } return; }
-                    std::fs::File::from_raw_fd(fd)
+                let mut cap = match pcap::Capture::from_device(&iface[..])
+                    .ok().and_then(|c| c.promisc(false).snaplen(128).timeout(1000).open().ok())
+                {
+                    Some(c) => c,
+                    None => { log::warn!("pcap: failed to open device {}", iface); return; }
                 };
-                let mut buf = [0u8; 65536];
+                let _ = cap.filter("ip", true);
+                let local_ip_prefix = "10.168.";
                 loop {
-                    match sock.read(&mut buf) {
-                        Ok(n) if n >= 20 => {
-                            // IP header: bytes 16-19 = dest IP, bytes 12-15 = src IP, bytes 2-3 = total length
-                            let total_len = u16::from_be_bytes([buf[2], buf[3]]) as u64;
-                            let src_ip = format!("{}.{}.{}.{}", buf[12], buf[13], buf[14], buf[15]);
-                            let dst_ip = format!("{}.{}.{}.{}", buf[16], buf[17], buf[18], buf[19]);
+                    match cap.next_packet() {
+                        Ok(packet) => {
+                            let data = &packet.data;
+                            if data.len() < 20 { continue; }
+                            let total_len = u16::from_be_bytes([data[2], data[3]]) as u64;
+                            let src = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
+                            let dst = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
                             if let Ok(mut map) = c.lock() {
-                                let (rx, tx) = map.entry(dst_ip.clone()).or_insert((0, 0));
-                                *rx += total_len; // incoming to this dest = we sent to them
-                                let (rx2, tx2) = map.entry(src_ip).or_insert((0, 0));
-                                *tx2 += total_len; // from this src to us = we received from them
-                                let _ = (rx, tx2);
-                                // Correct accounting: src sends, dst receives
-                                // From our perspective on TUN: src=them dst=us = rx; src=us dst=them = tx
-                                // This is simplified - we count both directions
+                                if dst.starts_with(local_ip_prefix) {
+                                    let entry = map.entry(src.clone()).or_insert((0, 0));
+                                    entry.0 += total_len;
+                                }
+                                if src.starts_with(local_ip_prefix) {
+                                    let entry = map.entry(dst.clone()).or_insert((0, 0));
+                                    entry.1 += total_len;
+                                }
                             }
                         }
+                        Err(pcap::Error::TimeoutExpired) => continue,
                         Err(_) => break,
-                        _ => {}
                     }
                 }
             });
             PeerTrafficTracker { counters }
         }
-
-        pub fn get_bytes(&self, vpn_ip: &str) -> (u64, u64) {
-            self.counters.lock().ok()
-                .and_then(|m| m.get(vpn_ip).copied())
-                .unwrap_or((0, 0))
-        }
-
-        pub fn get_all(&self) -> HashMap<String, (u64, u64)> {
-            self.counters.lock().ok().map(|m| m.clone()).unwrap_or_default()
-        }
-    }
-
-    fn get_iface_index(iface: &str) -> u32 {
-        let iface_c = std::ffi::CString::new(iface).unwrap_or_default();
-        unsafe { libc::if_nametoindex(iface_c.as_ptr()) }
     }
 }
 
 #[cfg(not(target_os = "linux"))]
 mod peer_traffic {
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
 
-    pub struct PeerTrafficTracker;
+    pub struct PeerTrafficTracker {
+        pub counters: Arc<Mutex<HashMap<String, (u64, u64)>>>,
+    }
 
     impl PeerTrafficTracker {
-        pub fn start(_iface: &str) -> Self { PeerTrafficTracker }
-        pub fn get_bytes(&self, _vpn_ip: &str) -> (u64, u64) { (0, 0) }
-        pub fn get_all(&self) -> HashMap<String, (u64, u64)> { HashMap::new() }
+        pub fn start(_iface: &str) -> Self {
+            PeerTrafficTracker { counters: Arc::new(Mutex::new(HashMap::new())) }
+        }
     }
 }
 
@@ -386,6 +364,10 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         });
     }
 
+    // ---- Start per-peer traffic tracker (pcap) ----
+    let traffic_tracker = peer_traffic::PeerTrafficTracker::start(TUN_DEV);
+    let tracker_counters = traffic_tracker.counters.clone();
+
     // ---- Start stats background task ----
     let stats_state = state.network_stats.clone();
     let peers_state = state.peers.clone();
@@ -410,31 +392,26 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
                     stats.tx_speed = tx_speed;
                 }
 
-                // Update per-peer speeds (proportional distribution on Windows, accurate on Linux)
+                // Per-peer traffic: accurate via pcap on all platforms
                 if let Ok(mut peers) = peers_state.lock() {
-                    let peer_count = peers.len();
-                    if peer_count > 0 {
-                        if let Ok(mut last_map) = peer_last_state.lock() {
-                            for peer in peers.iter_mut() {
-                                let (peer_rx_total, peer_tx_total) = {
-                                    let per_peer = (rx / peer_count as u64, tx / peer_count as u64);
-                                    per_peer
-                                };
-                                let key = peer.vpn_ip.clone();
-                                if let Some(&(last_peer_rx, last_peer_tx, last_t)) = last_map.get(&key) {
-                                    let dt2 = now.duration_since(last_t).as_secs_f64().max(0.1);
-                                    let ps_rx = if peer_rx_total >= last_peer_rx { (peer_rx_total - last_peer_rx) as f64 / dt2 } else { 0.0 };
-                                    let ps_tx = if peer_tx_total >= last_peer_tx { (peer_tx_total - last_peer_tx) as f64 / dt2 } else { 0.0 };
-                                    peer.rx_speed = ps_rx;
-                                    peer.tx_speed = ps_tx;
+                    if let Ok(tracker_map) = tracker_counters.lock() {
+                        let now = std::time::Instant::now();
+                        for peer in peers.iter_mut() {
+                            let (peer_rx, peer_tx) = tracker_map.get(&peer.vpn_ip).copied().unwrap_or((0, 0));
+                            // Calculate speed from delta
+                            if let Ok(mut last_map) = peer_last_state.lock() {
+                                if let Some(&(last_rx, last_tx, last_t)) = last_map.get(&peer.vpn_ip) {
+                                    let dt = now.duration_since(last_t).as_secs_f64().max(0.1);
+                                    peer.rx_speed = if peer_rx >= last_rx { (peer_rx - last_rx) as f64 / dt } else { 0.0 };
+                                    peer.tx_speed = if peer_tx >= last_tx { (peer_tx - last_tx) as f64 / dt } else { 0.0 };
                                 }
-                                peer.rx_bytes = peer_rx_total;
-                                peer.tx_bytes = peer_tx_total;
-                                last_map.insert(key, (peer_rx_total, peer_tx_total, now));
+                                last_map.insert(peer.vpn_ip.clone(), (peer_rx, peer_tx, now));
                             }
+                            peer.rx_bytes = peer_rx;
+                            peer.tx_bytes = peer_tx;
                         }
-                        let _ = app_handle3.emit("peers-updated", serde_json::json!(&*peers));
                     }
+                    let _ = app_handle3.emit("peers-updated", serde_json::json!(&*peers));
                 }
                 last_rx = rx;
                 last_tx = tx;
@@ -476,7 +453,6 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     let discovery_peers = state.peers.clone();
     let discovery_app = app_handle.clone();
     std::thread::spawn(move || {
-        // Parse subnet base from own IP (e.g., "10.168.4.24" -> "10.168.4.")
         let ip = discovery_ip.split('/').next().unwrap_or("0.0.0.0");
         let parts: Vec<&str> = ip.split('.').collect();
         let subnet_prefix = if parts.len() == 4 {
@@ -484,20 +460,19 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         } else {
             return;
         };
+        // First scan after 5s (let nebula establish initial connections)
+        std::thread::sleep(std::time::Duration::from_secs(5));
         loop {
-            // Sleep first — give nebula time to establish initial connections
-            std::thread::sleep(std::time::Duration::from_secs(30));
-            // Ping all IPs from .1 to .254 in the subnet
             for i in 1..255 {
                 let target = format!("{}{}", subnet_prefix, i);
-                // Just send one quick ping to trigger lighthouse query
                 let _ = measure_latency(&target);
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                std::thread::sleep(std::time::Duration::from_millis(30));
             }
-            // Emit updated peer list after scan
             if let Ok(peers) = discovery_peers.lock() {
                 let _ = discovery_app.emit("peers-updated", serde_json::json!(&*peers));
             }
+            // Rescan every 30s
+            std::thread::sleep(std::time::Duration::from_secs(30));
         }
     });
 
@@ -617,6 +592,19 @@ pub fn get_network_stats(state: State<AppState>) -> Result<NetworkStats, String>
 #[tauri::command]
 pub fn get_peers(state: State<AppState>) -> Result<Vec<PeerInfo>, String> {
     state.peers.lock().map_err(|e| e.to_string()).map(|p| p.clone())
+}
+
+#[tauri::command]
+pub fn discover_peers(state: State<AppState>) -> Result<(), String> {
+    let peers = state.peers.lock().map_err(|e| e.to_string())?;
+    // Trigger pings for all known peer IPs (and nearby IPs) to refresh hostmap
+    let targets: Vec<String> = peers.iter().map(|p| p.vpn_ip.clone()).collect();
+    std::thread::spawn(move || {
+        for ip in &targets {
+            let _ = measure_latency(ip);
+        }
+    });
+    Ok(())
 }
 
 fn get_config_dir() -> Result<PathBuf, String> {
