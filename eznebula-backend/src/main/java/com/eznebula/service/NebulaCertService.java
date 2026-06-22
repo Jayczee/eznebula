@@ -150,11 +150,9 @@ public class NebulaCertService {
             command.add(caKeyPath.toString());
             command.add("-name");
             command.add(clientName);
+            // /16 覆盖所有组和灯塔 (10.168.0.0/16)，确保 relay 可达
             command.add("-ip");
-            command.add(virtualIp + "/" + cidrSuffix);
-            // 同时签发灯塔所在网络，使客户端能与 relay 建立 layer 3 数据隧道
-            command.add("-ip");
-            command.add(properties.getLighthouse().getNebulaIp() + "/24");
+            command.add(virtualIp + "/16");
             command.add("-in-pub");
             command.add(tempPubKeyPath.toString());
             command.add("-out-crt");
