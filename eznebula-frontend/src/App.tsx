@@ -99,7 +99,7 @@ export default function App() {
           <div className="relative">
             <Input
               ref={serverInputRef}
-              placeholder="https://nebula.jayczee.cn 或 http://1.2.3.4:52346"
+              placeholder=""
               value={serverUrl}
               onChange={e => setServerUrl(e.target.value)}
               onFocus={handleServerInputFocus}

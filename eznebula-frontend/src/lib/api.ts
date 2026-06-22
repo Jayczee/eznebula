@@ -5,6 +5,19 @@ export interface JoinRequest { server_url: string; group_name: string; join_toke
 export interface NetworkStatus { connected: boolean; virtual_ip?: string; group_name?: string; uptime_seconds: number }
 export interface NetworkStats { rx_bytes: number; tx_bytes: number; rx_speed: number; tx_speed: number }
 export interface ServerEntry { id: string; name: string; address: string; port: number; default_group: string; default_device: string }
+export interface PeerInfo {
+  vpn_ip: string
+  hostname: string
+  connection_type: string  // "p2p" | "relay" | "unknown"
+  state: string            // "alive" | "testing" | "dead"
+  latency_ms: number | null
+  rx_bytes: number
+  tx_bytes: number
+  rx_speed: number
+  tx_speed: number
+  local_index: number
+  remote_index: number
+}
 
 async function openWindowDirect(view: string, title: string, width: number, height: number) {
   const label = `sub_${view}`
@@ -37,6 +50,7 @@ export const eznebulaApi = {
   disconnectNetwork: () => invoke<void>("disconnect_network"),
   getStatus: () => invoke<NetworkStatus>("get_status"),
   getNetworkStats: () => invoke<NetworkStats>("get_network_stats"),
+  getPeers: () => invoke<PeerInfo[]>("get_peers"),
   saveServer: (name: string, address: string, port: number, defaultGroup: string, defaultDevice: string) =>
     invoke<ServerEntry>("save_server", { name, address, port, defaultGroup, defaultDevice }),
   getServers: () => invoke<ServerEntry[]>("get_servers"),

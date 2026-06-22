@@ -237,6 +237,7 @@ pub fn run() {
             nebula::disconnect_network,
             nebula::get_status,
             nebula::get_network_stats,
+            nebula::get_peers,
             network::save_server,
             network::get_servers,
             network::delete_server,

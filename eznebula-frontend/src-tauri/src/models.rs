@@ -30,3 +30,28 @@ pub struct NetworkStats { pub rx_bytes: u64, pub tx_bytes: u64, pub rx_speed: f6
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keypair { pub public_key: String, pub private_key: String }
+
+/// Information about a peer in the same network group
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerInfo {
+    pub vpn_ip: String,
+    pub hostname: String,
+    /// "p2p" or "relay"
+    pub connection_type: String,
+    /// "alive", "testing", or "dead"
+    pub state: String,
+    /// Latency in milliseconds (None if not yet measured)
+    pub latency_ms: Option<f64>,
+    /// Total bytes received from this peer
+    pub rx_bytes: u64,
+    /// Total bytes sent to this peer
+    pub tx_bytes: u64,
+    /// Bytes/sec received (instantaneous)
+    pub rx_speed: f64,
+    /// Bytes/sec sent (instantaneous)
+    pub tx_speed: f64,
+    /// Local Nebula index ID
+    pub local_index: u64,
+    /// Remote Nebula index ID
+    pub remote_index: u64,
+}
