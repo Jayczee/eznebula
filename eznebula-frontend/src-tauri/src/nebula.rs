@@ -471,6 +471,36 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         }
     });
 
+    // ---- Start peer discovery task (periodic subnet ping) ----
+    let discovery_ip = d.virtual_ip_with_cidr.clone();
+    let discovery_peers = state.peers.clone();
+    let discovery_app = app_handle.clone();
+    std::thread::spawn(move || {
+        // Parse subnet base from own IP (e.g., "10.168.4.24" -> "10.168.4.")
+        let ip = discovery_ip.split('/').next().unwrap_or("0.0.0.0");
+        let parts: Vec<&str> = ip.split('.').collect();
+        let subnet_prefix = if parts.len() == 4 {
+            format!("{}.{}.{}.", parts[0], parts[1], parts[2])
+        } else {
+            return;
+        };
+        loop {
+            // Sleep first — give nebula time to establish initial connections
+            std::thread::sleep(std::time::Duration::from_secs(30));
+            // Ping all IPs from .1 to .254 in the subnet
+            for i in 1..255 {
+                let target = format!("{}{}", subnet_prefix, i);
+                // Just send one quick ping to trigger lighthouse query
+                let _ = measure_latency(&target);
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            // Emit updated peer list after scan
+            if let Ok(peers) = discovery_peers.lock() {
+                let _ = discovery_app.emit("peers-updated", serde_json::json!(&*peers));
+            }
+        }
+    });
+
     state.nebula_process.lock().map_err(|e| e.to_string())?.replace(child);
     state.network_status.lock().map_err(|e| e.to_string()).map(|mut s| {
         s.connected = true; s.virtual_ip = Some(d.virtual_ip_with_cidr.clone());
@@ -481,10 +511,13 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
 }
 
 /// Update the shared peer list based on a parsed nebula log event
+fn is_lighthouse(ip: &str) -> bool { ip.starts_with("10.168.255.") }
+
 fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: NebulaLogEvent) {
     if let Ok(mut peers) = peers_state.lock() {
         match event {
             NebulaLogEvent::HostmapAdded { vpn_ip } => {
+                if is_lighthouse(&vpn_ip) { return; }
                 if !peers.iter().any(|p| p.vpn_ip == vpn_ip) {
                     peers.push(PeerInfo {
                         vpn_ip,
@@ -499,6 +532,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                 }
             }
             NebulaLogEvent::TunnelStatus { vpn_ip, cert_name, method, state, local_index, remote_index } => {
+                if is_lighthouse(&vpn_ip) { return; }
                 if let Some(peer) = peers.iter_mut().find(|p| p.vpn_ip == vpn_ip) {
                     if !cert_name.is_empty() { peer.hostname = cert_name; }
                     peer.connection_type = method;

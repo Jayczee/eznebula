@@ -124,12 +124,12 @@ export default function PeersWindow() {
                     <ArrowDown className="size-2.5" />
                     {fmtBytes(peer.rx_bytes)}
                   </span>
-                  <span className="text-green-600 font-semibold">{fmtSpeed(peer.rx_speed)}/s</span>
+                  <span className="text-green-600 font-semibold">{fmtSpeed(peer.rx_speed)}</span>
                   <span className="flex items-center gap-0.5 text-blue-600">
                     <ArrowUp className="size-2.5" />
                     {fmtBytes(peer.tx_bytes)}
                   </span>
-                  <span className="text-blue-600 font-semibold">{fmtSpeed(peer.tx_speed)}/s</span>
+                  <span className="text-blue-600 font-semibold">{fmtSpeed(peer.tx_speed)}</span>
                 </div>
               </div>
             ))}
