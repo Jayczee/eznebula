@@ -152,6 +152,9 @@ public class NebulaCertService {
             command.add(clientName);
             command.add("-ip");
             command.add(virtualIp + "/" + cidrSuffix);
+            // 同时签发灯塔所在网络，使客户端能与 relay 建立 layer 3 数据隧道
+            command.add("-ip");
+            command.add(properties.getLighthouse().getNebulaIp() + "/24");
             command.add("-in-pub");
             command.add(tempPubKeyPath.toString());
             command.add("-out-crt");

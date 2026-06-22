@@ -112,6 +112,10 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     fs::write(&cert_p, &d.client_certificate).map_err(|e| e.to_string())?;
     fs::write(&key_p, &kp.private_key).map_err(|e| e.to_string())?;
 
+    // 灯塔 Nebula IP 的 /32 路由，使客户端能和灯塔建立 layer 3 数据隧道以使用 relay
+    let lh_nb_ip = &d.lighthouse_nebula_ip;
+    let via_ip = d.virtual_ip_with_cidr.split('/').next().unwrap_or("0.0.0.0");
+
     let lh_addr = format!("{}:{}", d.lighthouse_ip, d.lighthouse_port);
     let yml = format!(
         "pki:\n  ca: \"{}\"\n  cert: \"{}\"\n  key: \"{}\"\n\
@@ -120,14 +124,15 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
          listen:\n  host: 0.0.0.0\n  port: 0\n\
          punchy:\n  punch: true\n  respond: true\n\
          relay:\n  am_relay: false\n  use_relays: true\n\
-         tun:\n  disabled: false\n  dev: eznebula0\n  drop_local_broadcast: false\n  drop_multicast: false\n  tx_queue: 500\n  mtu: 1300\n\
+         tun:\n  disabled: false\n  dev: eznebula0\n  drop_local_broadcast: false\n  drop_multicast: false\n  tx_queue: 500\n  mtu: 1300\n  unsafe_routes:\n    - route: {}/32\n      via: {}\n\
          logging:\n  level: debug\n  format: text\n  file: \"{}\"\n\
          firewall:\n  outbound:\n    - port: any\n      proto: any\n      host: any\n  inbound:\n    - port: any\n      proto: any\n      host: any\n",
         ca_p.to_string_lossy().replace('\\', "/"),
         cert_p.to_string_lossy().replace('\\', "/"),
         key_p.to_string_lossy().replace('\\', "/"),
-        d.lighthouse_nebula_ip, lh_addr,
-        d.lighthouse_nebula_ip,
+        lh_nb_ip, lh_addr,
+        lh_nb_ip,
+        lh_nb_ip, via_ip,
         cfg.join("nebula.log").to_string_lossy().replace('\\', "/"),
     );
     fs::write(&yml_p, yml).map_err(|e| e.to_string())?;

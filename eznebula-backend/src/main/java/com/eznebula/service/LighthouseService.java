@@ -148,7 +148,7 @@ public class LighthouseService {
                 tun:
                   disabled: true
                 logging:
-                  level: info
+                  level: debug
                   format: text
                 firewall:
                   outbound:
