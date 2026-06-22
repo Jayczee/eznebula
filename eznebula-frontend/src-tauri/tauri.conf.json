@@ -14,6 +14,7 @@
     "windows": [
       {
         "title": "EZNebula",
+        "label": "main",
         "width": 380,
         "height": 280,
         "center": true,
@@ -22,7 +23,33 @@
         "visible": false
       }
     ],
-    "security": { "csp": null }
+    "security": {
+      "csp": null,
+      "capabilities": [
+        {
+          "identifier": "main-capability",
+          "description": "Main window capabilities",
+          "windows": ["main"],
+          "permissions": [
+            "core:default",
+            "core:window:allow-create",
+            "core:webview:allow-create-webview-window",
+            "core:webview:allow-webview-position",
+            "core:webview:allow-webview-size"
+          ]
+        },
+        {
+          "identifier": "sub-window-capability",
+          "description": "Sub-windows capabilities",
+          "windows": ["sub_*"],
+          "permissions": [
+            "core:default",
+            "core:window:default",
+            "core:webview:default"
+          ]
+        }
+      ]
+    }
   },
   "bundle": {
     "active": true,
@@ -33,6 +60,15 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "binaries/nebula.exe",
+      "binaries/wintun.dll"
+    ],
+    "windows": {
+      "wix": {
+        "language": "zh-CN"
+      }
+    }
   }
 }

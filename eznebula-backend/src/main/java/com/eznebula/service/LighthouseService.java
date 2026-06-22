@@ -28,8 +28,6 @@ import java.util.concurrent.TimeUnit;
 @Service
 public class LighthouseService {
 
-    private static final String LIGHTHOUSE_IP = "10.168.255.1";
-    private static final String LIGHTHOUSE_CIDR = LIGHTHOUSE_IP + "/24";
     private static final String LIGHTHOUSE_NAME = "eznebula-lighthouse";
 
     private static final String X25519_PRIV_HEADER = "-----BEGIN NEBULA X25519 PRIVATE KEY-----";
@@ -115,12 +113,14 @@ public class LighthouseService {
         Path tempPub = Files.createTempFile("lh-pub-", ".pem");
         Files.writeString(tempPub, pubPem, StandardCharsets.UTF_8);
         try {
+            String lhIp = properties.getLighthouse().getNebulaIp();
+            String lhCidr = lhIp + "/24";
             certService.ensureCA();
             runNebulaCert("sign",
                     "-ca-crt", certService.getCaCertPath().toString(),
                     "-ca-key", certService.getCaKeyPath().toString(),
                     "-name", LIGHTHOUSE_NAME,
-                    "-ip", LIGHTHOUSE_CIDR,
+                    "-ip", lhCidr,
                     "-in-pub", tempPub.toString(),
                     "-out-crt", lhCertPath.toString());
             log.info("  Lighthouse node cert signed: {}", lhCertPath);

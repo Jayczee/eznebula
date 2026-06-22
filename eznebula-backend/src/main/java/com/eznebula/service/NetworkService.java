@@ -106,6 +106,7 @@ public class NetworkService {
                 .clientCertificate(clientCertificate)
                 .caCertificate(caCertificate)
                 .lighthouseIp(properties.getLighthouse().getPublicIp())
+                .lighthouseNebulaIp(properties.getLighthouse().getNebulaIp())
                 .lighthousePort(properties.getLighthouse().getPort())
                 .networkCidr(group.getCidrBlock())
                 .message("Joined group: " + group.getGroupName())

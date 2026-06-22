@@ -1,29 +1,104 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Plus, Pencil, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Plus, Trash2 } from "lucide-react"
 import { eznebulaApi, type ServerEntry } from "@/lib/api"
-import ServerForm from "./server-form"
+import { ServerForm } from "@/components/server-form"
+
+function rttColor(ms: number | null): string {
+  if (ms === null || ms === undefined) return "text-muted-foreground"
+  if (ms <= 80) return "text-green-600"
+  if (ms <= 250) return "text-yellow-600"
+  return "text-orange-600"
+}
 
 export default function ServersWindow() {
   const [servers, setServers] = useState<ServerEntry[]>([])
+  const [rttMap, setRttMap] = useState<Record<string, number | null>>({})
   const [formOpen, setFormOpen] = useState(false)
-  const [editServer, setEditServer] = useState<ServerEntry | null>(null)
-  const load = useCallback(async () => { try { setServers(await eznebulaApi.getServers()) } catch {} }, [])
-  useEffect(() => { load() }, [load])
+  const [measuring, setMeasuring] = useState(false)
 
-  const handleSave = async (name: string, address: string, port: number) => {
-    try { await eznebulaApi.saveServer(name, address, port); await load(); setFormOpen(false); setEditServer(null); toast.success("已保存") }
-    catch (e: any) { toast.error("保存失败", { description: String(e) }) }
+  const reload = useCallback(async () => {
+    try {
+      const list = await eznebulaApi.getServers()
+      setServers(list)
+      setMeasuring(true)
+      const rtts: Record<string, number | null> = {}
+      await Promise.all(
+        list.map(async (s) => {
+          try { rtts[s.id] = await eznebulaApi.measureServerRtt(s.address, s.port) } catch { rtts[s.id] = null }
+        })
+      )
+      setRttMap(rtts)
+      setMeasuring(false)
+    } catch { /* ignore */ }
+  }, [])
+
+  useEffect(() => { reload() }, [reload])
+
+  const handleSave = async (name: string, address: string, port: number, defaultGroup: string, defaultDevice: string) => {
+    try {
+      await eznebulaApi.saveServer(name, address, port, defaultGroup, defaultDevice)
+      setFormOpen(false)
+      reload()
+    } catch (e) {
+      alert(`保存失败: ${e}`)
+    }
   }
-  const handleDelete = async (id: string) => { try { await eznebulaApi.deleteServer(id); await load(); toast.success("已删除") } catch (e: any) { toast.error("删除失败", { description: String(e) }) } }
 
-  return <div className="h-screen bg-background flex flex-col">
-    <div className="p-2 border-b flex items-center justify-between"><h1 className="text-sm font-bold">服务器列表</h1><Button size="xs" variant="ghost" onClick={() => { setEditServer(null); setFormOpen(true) }}><Plus className="size-3"/></Button></div>
-    <div className="flex-1 overflow-auto p-2">
-      {servers.length === 0 ? <p className="text-xs text-muted-foreground text-center mt-4">暂无服务器</p> :
-        <div className="space-y-1">{servers.map(s => <div key={s.id} className="flex items-center justify-between p-2 border rounded-md"><div><div className="text-xs font-medium">{s.name || s.address}</div><div className="text-[10px] text-muted-foreground">{s.address}:{s.port}</div></div><div className="flex items-center gap-1"><Button variant="ghost" size="icon-xs" onClick={() => { setEditServer(s); setFormOpen(true) }}><Pencil className="size-3"/></Button><Button variant="ghost" size="icon-xs" onClick={() => handleDelete(s.id)}><Trash2 className="size-3"/></Button></div></div>)}</div>}
+  const handleDelete = async (id: string) => {
+    try { await eznebulaApi.deleteServer(id); reload() } catch (e) { alert(`删除失败: ${e}`) }
+  }
+
+  return (
+    <div className="h-screen bg-background flex flex-col">
+      <div className="p-3 border-b flex items-center justify-between">
+        <h1 className="text-sm font-bold">服务器列表</h1>
+        <Button variant="outline" size="icon-xs" title="添加" onClick={() => setFormOpen(true)}>
+          <Plus className="size-3.5" />
+        </Button>
+      </div>
+      <div className="flex-1 overflow-hidden p-3">
+        {servers.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-8">暂无服务器，点击 + 添加</p>
+        ) : (
+          <ScrollArea className="h-full">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b text-[10px] text-muted-foreground sticky top-0 bg-background">
+                  <th className="text-left py-1.5 font-medium">名称</th>
+                  <th className="text-left py-1.5 font-medium">地址</th>
+                  <th className="text-left py-1.5 font-medium">端口</th>
+                  <th className="text-left py-1.5 font-medium">延迟</th>
+                  <th className="text-right py-1.5 font-medium w-16">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {servers.map((s) => (
+                  <tr key={s.id} className="border-b last:border-0 hover:bg-muted/50">
+                    <td className="py-1.5 pr-2 font-medium truncate max-w-[100px]">
+                      {s.name || `${s.address}:${s.port}`}
+                      {s.default_group && <span className="text-[10px] text-muted-foreground block">组: {s.default_group}</span>}
+                      {s.default_device && <span className="text-[10px] text-muted-foreground block">设备: {s.default_device}</span>}
+                    </td>
+                    <td className="py-1.5 pr-2 font-mono text-[11px]">{s.address}</td>
+                    <td className="py-1.5 pr-2 font-mono text-[11px]">{s.port}</td>
+                    <td className={`py-1.5 pr-2 font-mono text-[11px] ${rttColor(rttMap[s.id])}`}>
+                      {measuring && rttMap[s.id] === undefined ? "测试中..." : rttMap[s.id] !== null && rttMap[s.id] !== undefined ? `${rttMap[s.id]} ms` : "超时"}
+                    </td>
+                    <td className="py-1.5 text-right">
+                      <Button variant="ghost" size="icon-xs" className="size-5 text-destructive" title="删除" onClick={() => handleDelete(s.id)}>
+                        <Trash2 className="size-3" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </ScrollArea>
+        )}
+      </div>
+      <ServerForm open={formOpen} onClose={() => setFormOpen(false)} onSave={handleSave} />
     </div>
-    {formOpen && <ServerForm initial={editServer} onSave={handleSave} onCancel={() => { setFormOpen(false); setEditServer(null) }}/>}
-  </div>
+  )
 }

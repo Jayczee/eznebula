@@ -1,13 +1,79 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import type { ServerEntry } from "@/lib/api"
 
-export default function ServerForm({ initial, onSave, onCancel }: { initial: ServerEntry | null; onSave: (n: string, a: string, p: number) => void; onCancel: () => void }) {
-  const [name, setName] = useState(initial?.name ?? "")
-  const [address, setAddress] = useState(initial?.address ?? "")
-  const [port, setPort] = useState(initial?.port?.toString() ?? "")
-  const submit = () => { if (!address.trim()) return; onSave(name.trim(), address.trim(), parseInt(port) || 8080) }
-  return <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80"><div className="bg-card border rounded-lg p-4 shadow-lg w-64 space-y-3"><h2 className="text-sm font-semibold">{initial ? "编辑" : "添加"}服务器</h2><div className="space-y-2"><div><Label className="text-[10px]">名称</Label><Input value={name} onChange={e => setName(e.target.value)} className="h-7 text-xs" placeholder="我的服务器"/></div><div><Label className="text-[10px]">IP 地址</Label><Input value={address} onChange={e => setAddress(e.target.value)} className="h-7 text-xs" placeholder="192.168.1.1"/></div><div><Label className="text-[10px]">端口</Label><Input value={port} onChange={e => setPort(e.target.value)} className="h-7 text-xs" placeholder="8080"/></div></div><div className="flex justify-end gap-2"><Button size="xs" variant="outline" onClick={onCancel}>取消</Button><Button size="xs" onClick={submit}>保存</Button></div></div></div>
+interface Props {
+  open: boolean
+  onClose: () => void
+  onSave: (name: string, address: string, port: number, defaultGroup: string, defaultDevice: string) => void
+}
+
+export function ServerForm({ open, onClose, onSave }: Props) {
+  const [name, setName] = useState("")
+  const [address, setAddress] = useState("")
+  const [port, setPort] = useState("")
+  const [defaultGroup, setDefaultGroup] = useState("")
+  const [defaultDevice, setDefaultDevice] = useState("")
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (open) {
+      setName("")
+      setAddress("")
+      setPort("")
+      setDefaultGroup("")
+      setDefaultDevice("")
+      setError("")
+    }
+  }, [open])
+
+  if (!open) return null
+
+  const handleSave = () => {
+    if (!address.trim()) { setError("地址不能为空"); return }
+    if (!port.trim() || isNaN(Number(port))) { setError("端口号必须为数字"); return }
+    const portNum = Number(port)
+    if (portNum < 1 || portNum > 65535) { setError("端口号范围 1-65535"); return }
+
+    onSave(name.trim() || address.trim(), address.trim(), portNum, defaultGroup.trim(), defaultDevice.trim())
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-background rounded-lg border shadow-lg w-[360px] p-4">
+        <div className="mb-1">
+          <h3 className="text-sm font-semibold">添加服务器</h3>
+        </div>
+        <div className="space-y-3 mt-3">
+          <div>
+            <Label className="text-[10px]">名称 <span className="text-muted-foreground">(为空时用地址做名称)</span></Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="例如：公司服务器" className="h-7 text-xs" />
+          </div>
+          <div>
+            <Label className="text-[10px]">地址 *</Label>
+            <Input value={address} onChange={e => setAddress(e.target.value)} placeholder="116.62.206.205" className="h-7 text-xs" />
+          </div>
+          <div>
+            <Label className="text-[10px]">端口号 *</Label>
+            <Input value={port} onChange={e => setPort(e.target.value)} placeholder="52346" className="h-7 text-xs" />
+          </div>
+          <div>
+            <Label className="text-[10px]">默认组名 <span className="text-muted-foreground">(可选)</span></Label>
+            <Input value={defaultGroup} onChange={e => setDefaultGroup(e.target.value)} placeholder="my-group" className="h-7 text-xs" />
+          </div>
+          <div>
+            <Label className="text-[10px]">默认设备名 <span className="text-muted-foreground">(可选)</span></Label>
+            <Input value={defaultDevice} onChange={e => setDefaultDevice(e.target.value)} placeholder="my-device" className="h-7 text-xs" />
+          </div>
+          {error && <p className="text-[10px] text-destructive">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="xs" onClick={onClose}>取消</Button>
+            <Button size="xs" onClick={handleSave}>保存</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }

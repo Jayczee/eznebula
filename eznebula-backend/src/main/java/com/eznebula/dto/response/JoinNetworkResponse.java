@@ -31,9 +31,14 @@ public class JoinNetworkResponse {
     private String caCertificate;
 
     /**
-     * Lighthouse public IP address
+     * Lighthouse public IP address (or hostname) for static_host_map value
      */
     private String lighthouseIp;
+
+    /**
+     * Lighthouse Nebula virtual IP (for static_host_map key and lighthouse.hosts)
+     */
+    private String lighthouseNebulaIp;
 
     /**
      * Lighthouse port

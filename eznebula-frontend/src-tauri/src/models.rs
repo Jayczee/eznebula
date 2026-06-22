@@ -1,14 +1,23 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerEntry { pub id: String, pub name: String, pub address: String, pub port: u16 }
+pub struct ServerEntry {
+    pub id: String,
+    pub name: String,
+    pub address: String,
+    pub port: u16,
+    #[serde(default)]
+    pub default_group: String,
+    #[serde(default)]
+    pub default_device: String,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JoinRequest { pub server_url: String, pub group_name: String, pub join_token: String, pub client_name: String }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct JoinResponse { pub virtual_ip_with_cidr: String, pub client_certificate: String, pub ca_certificate: String, pub lighthouse_ip: String, pub lighthouse_port: u16, pub network_cidr: String, pub message: String }
+pub struct JoinResponse { pub virtual_ip_with_cidr: String, pub client_certificate: String, pub ca_certificate: String, pub lighthouse_ip: String, pub lighthouse_nebula_ip: String, pub lighthouse_port: u16, pub network_cidr: String, pub message: String }
 
 #[derive(Debug, Deserialize)]
 pub struct ApiResponse<T> { pub success: bool, pub message: Option<String>, pub data: Option<T> }

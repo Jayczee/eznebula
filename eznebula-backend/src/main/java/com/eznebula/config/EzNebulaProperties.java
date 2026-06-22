@@ -56,12 +56,19 @@ public class EzNebulaProperties {
     @Data
     public static class LighthouseProperties {
         /**
-         * Lighthouse public IP address
+         * Lighthouse public IP address (or hostname) that clients use to reach the lighthouse.
+         * Must be reachable from clients. Example: "www.jayczee.cn" or "1.2.3.4"
          */
         private String publicIp;
 
         /**
-         * Lighthouse port
+         * Lighthouse Nebula virtual IP (within the VPN overlay network).
+         * This is the IP clients use in static_host_map key and lighthouse.hosts.
+         */
+        private String nebulaIp = "10.168.255.1";
+
+        /**
+         * Lighthouse port (UDP)
          */
         private Integer port = 4242;
     }
