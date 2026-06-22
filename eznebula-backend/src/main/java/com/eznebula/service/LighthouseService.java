@@ -138,6 +138,9 @@ public class LighthouseService {
                   key: "%s"
                 lighthouse:
                   am_lighthouse: true
+                relay:
+                  am_relay: true
+                  use_relays: true
                 listen:
                   host: 0.0.0.0
                   port: %d
