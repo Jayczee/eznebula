@@ -143,7 +143,8 @@ mod peer_traffic {
         pub fn start(_iface: &str) -> Self {
             let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
             let c = counters.clone();
-            let _ = std::thread::Builder::new().stack_size(4 * 1024 * 1024).spawn(move || {
+            std::thread::Builder::new().stack_size(4 * 1024 * 1024).name("wd-traffic".into()).spawn(move || {
+                log::info!("WinDivert traffic tracker starting...");
                 let flags = windivert::prelude::WinDivertFlags::default().set_sniff();
                 let handle = match windivert::WinDivert::network(
                     "ip and (ip.SrcAddr >= 10.168.0.0 or ip.DstAddr >= 10.168.0.0)",
@@ -152,25 +153,28 @@ mod peer_traffic {
                     Ok(h) => h,
                     Err(e) => { log::warn!("WinDivert failed: {}", e); return; }
                 };
+                log::info!("WinDivert opened, capturing packets...");
                 let local_prefix = "10.168.";
-                let mut buf = vec![0u8; 2048];
+                let mut buf = vec![0u8; 4096];
                 loop {
-                    match handle.recv(&mut buf) {
-                        Ok(packet) => {
+                    match handle.recv_wait(&mut buf, 1000) {
+                        Ok(Some(packet)) => {
                             let data = &packet.data;
-                            if data.len() < 20 { continue; }
-                            let len = u16::from_be_bytes([data[2], data[3]]) as u64;
-                            let src = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
-                            let dst = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
-                            if let Ok(mut m) = c.lock() {
-                                if dst.starts_with(local_prefix) { m.entry(dst).or_insert((0,0)).1 += len; }
-                                if src.starts_with(local_prefix) { m.entry(src).or_insert((0,0)).0 += len; }
+                            if data.len() >= 20 {
+                                let len = u16::from_be_bytes([data[2], data[3]]) as u64;
+                                let src = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
+                                let dst = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
+                                if let Ok(mut m) = c.lock() {
+                                    if dst.starts_with(local_prefix) { m.entry(dst).or_insert((0,0)).1 += len; }
+                                    if src.starts_with(local_prefix) { m.entry(src).or_insert((0,0)).0 += len; }
+                                }
                             }
                         }
-                        Err(_) => break,
+                        Ok(None) => continue, // timeout
+                        Err(e) => { log::warn!("WinDivert recv error: {}", e); break; }
                     }
                 }
-            });
+            }).ok();
             PeerTrafficTracker { counters }
         }
     }
