@@ -129,54 +129,13 @@ fn read_tun_bytes() -> Result<(u64, u64), String> {
     { Ok((0, 0)) }
 }
 
-// ---- Per-peer traffic tracking: WinDivert (Windows), pcap (Linux) ----
+// ---- Per-peer traffic tracking: pcap (Linux), proportional (others) ----
 mod peer_traffic {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
     pub struct PeerTrafficTracker {
         pub counters: Arc<Mutex<HashMap<String, (u64, u64)>>>,
-    }
-
-    #[cfg(windows)]
-    impl PeerTrafficTracker {
-        pub fn start(_iface: &str) -> Self {
-            let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
-            let c = counters.clone();
-            std::thread::Builder::new().stack_size(4 * 1024 * 1024).name("wd-traffic".into()).spawn(move || {
-                log::info!("WinDivert traffic tracker starting...");
-                let flags = windivert::prelude::WinDivertFlags::default().set_sniff();
-                let handle = match windivert::WinDivert::network(
-                    "ip and (ip.SrcAddr >= 10.168.0.0 or ip.DstAddr >= 10.168.0.0)",
-                    0, flags,
-                ) {
-                    Ok(h) => h,
-                    Err(e) => { log::warn!("WinDivert failed: {}", e); return; }
-                };
-                log::info!("WinDivert opened, capturing packets...");
-                let local_prefix = "10.168.";
-                let mut buf = vec![0u8; 4096];
-                loop {
-                    match handle.recv_wait(&mut buf, 1000) {
-                        Ok(Some(packet)) => {
-                            let data = &packet.data;
-                            if data.len() >= 20 {
-                                let len = u16::from_be_bytes([data[2], data[3]]) as u64;
-                                let src = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
-                                let dst = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
-                                if let Ok(mut m) = c.lock() {
-                                    if dst.starts_with(local_prefix) { m.entry(dst).or_insert((0,0)).1 += len; }
-                                    if src.starts_with(local_prefix) { m.entry(src).or_insert((0,0)).0 += len; }
-                                }
-                            }
-                        }
-                        Ok(None) => continue, // timeout
-                        Err(e) => { log::warn!("WinDivert recv error: {}", e); break; }
-                    }
-                }
-            }).ok();
-            PeerTrafficTracker { counters }
-        }
     }
 
     #[cfg(target_os = "linux")]
@@ -216,7 +175,7 @@ mod peer_traffic {
         }
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(target_os = "linux"))]
     impl PeerTrafficTracker {
         pub fn start(_iface: &str) -> Self {
             PeerTrafficTracker { counters: Arc::new(Mutex::new(HashMap::new())) }
@@ -439,13 +398,17 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
                     stats.tx_speed = tx_speed;
                 }
 
-                // Per-peer traffic from tracker
+                // Per-peer traffic
                 if let Ok(mut peers) = peers_state.lock() {
                     let now = std::time::Instant::now();
+                    let pc = peers.len().max(1) as u64;
                     for peer in peers.iter_mut() {
-                        let (peer_rx, peer_tx) = tracker_counters.lock().ok()
-                            .and_then(|m| m.get(&peer.vpn_ip).copied())
-                            .unwrap_or((0, 0));
+                        let (peer_rx, peer_tx) = {
+                            #[cfg(target_os = "linux")]
+                            { tracker_counters.lock().ok().and_then(|m| m.get(&peer.vpn_ip).copied()).unwrap_or((rx / pc, tx / pc)) }
+                            #[cfg(not(target_os = "linux"))]
+                            { (rx / pc, tx / pc) }
+                        };
                         if let Ok(mut last_map) = peer_last_state.lock() {
                             if let Some(&(lr, lt, lt2)) = last_map.get(&peer.vpn_ip) {
                                 let dt = now.duration_since(lt2).as_secs_f64().max(0.1);
