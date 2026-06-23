@@ -5,12 +5,6 @@ import { RefreshCw, Zap, Satellite } from "lucide-react"
 import { listen } from "@tauri-apps/api/event"
 import { eznebulaApi, type NetworkStatus, type PeerInfo } from "@/lib/api"
 
-function LatencyBadge({ ms }: { ms: number | null }) {
-  if (ms === null) return <span className="text-[10px] text-muted-foreground">—</span>
-  const color = ms < 50 ? "text-green-600" : ms < 100 ? "text-yellow-600" : "text-red-600"
-  return <span className={`text-[10px] font-mono ${color}`}>{ms.toFixed(0)}ms</span>
-}
-
 export default function PeersWindow() {
   const [status, setStatus] = useState<NetworkStatus | null>(null)
   const [peers, setPeers] = useState<PeerInfo[]>([])
@@ -86,6 +80,16 @@ export default function PeersWindow() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {/* 延迟 - 放在最前面 */}
+                    <span className="text-[10px] font-mono font-bold min-w-[40px] text-right">
+                      {peer.latency_ms !== null ? (
+                        <span className={peer.latency_ms < 50 ? "text-green-600" : peer.latency_ms < 100 ? "text-yellow-600" : "text-red-600"}>
+                          {peer.latency_ms.toFixed(0)}ms
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </span>
                     {/* 连接方式 */}
                     {peer.connection_type === "p2p" ? (
                       <span className="flex items-center gap-0.5 text-[10px] text-green-600" title="P2P 直连">
@@ -98,8 +102,6 @@ export default function PeersWindow() {
                     ) : (
                       <span className="text-[10px] text-muted-foreground">...</span>
                     )}
-                    {/* 延迟 */}
-                    <LatencyBadge ms={peer.latency_ms} />
                     {/* 在线状态 */}
                     <Badge className={`text-[10px] h-4 px-1.5 ${
                       peer.state === "alive" ? "bg-green-600" : peer.state === "testing" ? "bg-yellow-600" : "bg-red-600"
