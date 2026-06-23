@@ -493,13 +493,14 @@ fn measure_latency(vpn_ip: &str) -> Option<f64> {
             .output().ok()?
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    // Parse "time=XXms" or "time<1ms" or "time=XX.X ms"
-    if let Some(pos) = text.find("time") {
-        let rest = &text[pos + 4..];
-        let rest = rest.trim_start_matches(['=', '<', ' ']);
-        if let Some(end) = rest.find("ms") {
-            let num: &str = &rest[..end];
-            return num.trim().parse::<f64>().ok();
+    // Parse "time=XXms" / "时间=XXms" / "time<1ms" / "时间<1ms"
+    for keyword in &["time", "时间"] {
+        if let Some(pos) = text.find(keyword) {
+            let rest = &text[pos + keyword.len()..];
+            let rest = rest.trim_start_matches(['=', '<', ' ']);
+            if let Some(end) = rest.find("ms") {
+                return rest[..end].trim().parse::<f64>().ok();
+            }
         }
     }
     None
