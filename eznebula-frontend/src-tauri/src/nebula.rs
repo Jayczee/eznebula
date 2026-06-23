@@ -129,116 +129,56 @@ fn read_tun_bytes() -> Result<(u64, u64), String> {
     { Ok((0, 0)) }
 }
 
-// ---- Per-peer traffic tracking: raw sockets, cross-platform ----
+// ---- Per-peer traffic tracking ----
 mod peer_traffic {
     use std::collections::HashMap;
-    use std::io::Read;
     use std::sync::{Arc, Mutex};
 
     pub struct PeerTrafficTracker {
         pub counters: Arc<Mutex<HashMap<String, (u64, u64)>>>, // vpn_ip -> (rx_bytes, tx_bytes)
     }
 
+    #[cfg(target_os = "linux")]
     impl PeerTrafficTracker {
         pub fn start(iface: &str) -> Self {
             let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
             let c = counters.clone();
             let iface = iface.to_string();
-
             std::thread::spawn(move || {
-                let _ = iface;
-                let local_ip_prefix = "10.168.";
-                let mut buf = [0u8; 4096];
-
-                #[cfg(target_os = "linux")]
-                let mut reader: Option<Box<dyn Read + Send>> = {
-                    unsafe {
-                        let fd = libc::socket(libc::AF_PACKET, libc::SOCK_RAW,
-                            (libc::ETH_P_ALL as u16).to_be() as i32);
-                        if fd < 0 { log::warn!("AF_PACKET socket failed"); None }
-                        else {
-                            let ifc = std::ffi::CString::new(iface.as_str()).unwrap_or_default();
-                            let idx = libc::if_nametoindex(ifc.as_ptr());
-                            if idx == 0 { unsafe { libc::close(fd); } None }
-                            else {
-                                let mut addr: libc::sockaddr_ll = std::mem::zeroed();
-                                addr.sll_family = libc::AF_PACKET as u16;
-                                addr.sll_protocol = (libc::ETH_P_ALL as u16).to_be();
-                                addr.sll_ifindex = idx as i32;
-                                if libc::bind(fd, &addr as *const _ as *const libc::sockaddr,
-                                    std::mem::size_of::<libc::sockaddr_ll>() as u32) < 0
-                                { unsafe { libc::close(fd); } None }
-                                else {
-                                    use std::os::unix::io::FromRawFd;
-                                    Some(Box::new(std::fs::File::from_raw_fd(fd)))
-                                }
-                            }
-                        }
-                    }
+                let mut cap = match pcap::Capture::from_device(&iface[..])
+                    .ok().and_then(|c| c.promisc(false).snaplen(128).timeout(1000).open().ok())
+                {
+                    Some(c) => c,
+                    None => { log::warn!("pcap: failed to open {}", iface); return; }
                 };
-
-                #[cfg(windows)]
-                let mut reader: Option<Box<dyn Read + Send>> = {
-                    use socket2::{Socket, Domain, Type, Protocol};
-                    // SOCK_RAW = 3, IPPROTO_RAW = 255
-                    match Socket::new(Domain::IPV4, Type::from(3i32), Some(Protocol::from(255))) {
-                        Ok(sock) => {
-                            // On Windows, raw socket receives IP packets (not Ethernet).
-                            // Bind to the TUN interface's local address.
-                            let bind_addr: std::net::SocketAddrV4 = "0.0.0.0:0".parse().unwrap();
-                            if sock.bind(&socket2::SockAddr::from(bind_addr)).is_err() {
-                                log::warn!("raw socket bind failed, per-peer traffic unavailable");
-                                None
-                            } else {
-                                sock.set_nonblocking(true).ok();
-                                Some(Box::new(sock))
-                            }
-                        }
-                        Err(_) => { log::warn!("raw socket creation failed"); None }
-                    }
-                };
-
-                #[cfg(not(any(target_os = "linux", windows)))]
-                let mut reader: Option<Box<dyn Read + Send>> = None;
-
-                let mut reader = match reader {
-                    Some(r) => r,
-                    None => return,
-                };
-
+                let _ = cap.filter("ip", true);
+                let local_prefix = "10.168.";
                 loop {
-                    match reader.read(&mut buf) {
-                        Ok(n) if n >= 20 => {
-                            // Parse IP header: offset 0 depends on platform
-                            // Linux AF_PACKET: Ethernet header (14 bytes) then IP
-                            // Windows raw IPv4: IP header directly
-                            let ip_off = if cfg!(target_os = "linux") { 14 } else { 0 };
-                            if n < ip_off + 20 { continue; }
-                            let data = &buf[ip_off..];
-                            let total_len = u16::from_be_bytes([data[2], data[3]]) as u64;
+                    match cap.next_packet() {
+                        Ok(packet) => {
+                            let data = &packet.data;
+                            if data.len() < 20 { continue; }
+                            let len = u16::from_be_bytes([data[2], data[3]]) as u64;
                             let src = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
                             let dst = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
-                            if let Ok(mut map) = c.lock() {
-                                // rx: packet from peer to us (src is peer IP)
-                                if src.starts_with(local_ip_prefix) {
-                                    map.entry(src).or_insert((0, 0)).0 += total_len;
-                                }
-                                // tx: packet from us to peer (dst is peer IP)
-                                if dst.starts_with(local_ip_prefix) {
-                                    map.entry(dst).or_insert((0, 0)).1 += total_len;
-                                }
+                            if let Ok(mut m) = c.lock() {
+                                if dst.starts_with(local_prefix) { m.entry(dst).or_insert((0,0)).1 += len; }
+                                if src.starts_with(local_prefix) { m.entry(src).or_insert((0,0)).0 += len; }
                             }
                         }
-                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            std::thread::sleep(std::time::Duration::from_millis(100));
-                            continue;
-                        }
+                        Err(pcap::Error::TimeoutExpired) => continue,
                         Err(_) => break,
-                        _ => {}
                     }
                 }
             });
             PeerTrafficTracker { counters }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    impl PeerTrafficTracker {
+        pub fn start(_iface: &str) -> Self {
+            PeerTrafficTracker { counters: Arc::new(Mutex::new(HashMap::new())) }
         }
     }
 }
@@ -458,24 +398,31 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
                     stats.tx_speed = tx_speed;
                 }
 
-                // Per-peer traffic: accurate via pcap on all platforms
+                // Per-peer traffic: pcap on Linux (accurate), proportional on other platforms
                 if let Ok(mut peers) = peers_state.lock() {
-                    if let Ok(tracker_map) = tracker_counters.lock() {
-                        let now = std::time::Instant::now();
-                        for peer in peers.iter_mut() {
-                            let (peer_rx, peer_tx) = tracker_map.get(&peer.vpn_ip).copied().unwrap_or((0, 0));
-                            // Calculate speed from delta
-                            if let Ok(mut last_map) = peer_last_state.lock() {
-                                if let Some(&(last_rx, last_tx, last_t)) = last_map.get(&peer.vpn_ip) {
-                                    let dt = now.duration_since(last_t).as_secs_f64().max(0.1);
-                                    peer.rx_speed = if peer_rx >= last_rx { (peer_rx - last_rx) as f64 / dt } else { 0.0 };
-                                    peer.tx_speed = if peer_tx >= last_tx { (peer_tx - last_tx) as f64 / dt } else { 0.0 };
-                                }
-                                last_map.insert(peer.vpn_ip.clone(), (peer_rx, peer_tx, now));
+                    let now = std::time::Instant::now();
+                    let peer_count = peers.len().max(1) as u64;
+                    for peer in peers.iter_mut() {
+                        let (peer_rx, peer_tx): (u64, u64) = {
+                            #[cfg(target_os = "linux")]
+                            {
+                                tracker_counters.lock().ok()
+                                    .and_then(|m| m.get(&peer.vpn_ip).copied())
+                                    .unwrap_or((rx / peer_count, tx / peer_count))
                             }
-                            peer.rx_bytes = peer_rx;
-                            peer.tx_bytes = peer_tx;
+                            #[cfg(not(target_os = "linux"))]
+                            { (rx / peer_count, tx / peer_count) }
+                        };
+                        if let Ok(mut last_map) = peer_last_state.lock() {
+                            if let Some(&(lr, lt, lt2)) = last_map.get(&peer.vpn_ip) {
+                                let dt = now.duration_since(lt2).as_secs_f64().max(0.1);
+                                peer.rx_speed = if peer_rx >= lr { (peer_rx - lr) as f64 / dt } else { 0.0 };
+                                peer.tx_speed = if peer_tx >= lt { (peer_tx - lt) as f64 / dt } else { 0.0 };
+                            }
+                            last_map.insert(peer.vpn_ip.clone(), (peer_rx, peer_tx, now));
                         }
+                        peer.rx_bytes = peer_rx;
+                        peer.tx_bytes = peer_tx;
                     }
                     let _ = app_handle3.emit("peers-updated", serde_json::json!(&*peers));
                 }
