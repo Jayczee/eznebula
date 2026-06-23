@@ -164,24 +164,25 @@ public class NetworkService {
     @Transactional
     public void cleanupStaleClients() {
         List<NetworkGroup> allGroups = networkGroupRepository.findAll();
-        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(90);
+        LocalDateTime staleCutoff = LocalDateTime.now().minusSeconds(90);
+        LocalDateTime deleteCutoff = LocalDateTime.now().minusHours(24);
 
         for (NetworkGroup group : allGroups) {
-            List<ClientNode> clients = clientNodeRepository.findByNetworkGroupAndActiveTrue(group);
-            int staleCount = 0;
-            for (ClientNode client : clients) {
-                if (client.getLastSeenAt() == null || client.getLastSeenAt().isBefore(cutoff)) {
+            // Mark clients inactive if no heartbeat for 90s
+            List<ClientNode> activeClients = clientNodeRepository.findByNetworkGroupAndActiveTrue(group);
+            for (ClientNode client : activeClients) {
+                if (client.getLastSeenAt() == null || client.getLastSeenAt().isBefore(staleCutoff)) {
                     client.setActive(false);
                     clientNodeRepository.save(client);
-                    staleCount++;
                     log.info("Marked stale client inactive: {} ({})", client.getClientName(), client.getVirtualIp());
                 }
             }
-            // Delete groups with no active clients
-            List<ClientNode> remaining = clientNodeRepository.findByNetworkGroupAndActiveTrue(group);
-            if (remaining.isEmpty()) {
-                log.info("Auto-deleting empty group: {}", group.getGroupName());
-                List<ClientNode> allClients = clientNodeRepository.findByNetworkGroup(group);
+            // Delete group only if abandoned for 24 hours (no clients at all)
+            List<ClientNode> allClients = clientNodeRepository.findByNetworkGroup(group);
+            boolean allOld = allClients.stream().allMatch(c ->
+                c.getLastSeenAt() == null || c.getLastSeenAt().isBefore(deleteCutoff));
+            if (!allClients.isEmpty() && allOld) {
+                log.info("Auto-deleting abandoned group: {}", group.getGroupName());
                 clientNodeRepository.deleteAll(allClients);
                 networkGroupRepository.delete(group);
             }
@@ -194,7 +195,8 @@ public class NetworkService {
     @Transactional
     public void heartbeat(String groupName, String clientName) {
         networkGroupRepository.findByGroupNameAndActiveTrue(groupName).ifPresent(group -> {
-            clientNodeRepository.findByNetworkGroupAndActiveTrue(group).stream()
+            // Search ALL clients (not just active) so we can re-activate after timeout
+            clientNodeRepository.findByNetworkGroup(group).stream()
                     .filter(c -> c.getClientName().equals(clientName))
                     .findFirst()
                     .ifPresent(client -> {
