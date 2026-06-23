@@ -2,6 +2,7 @@ package com.eznebula.controller;
 
 import com.eznebula.dto.request.JoinNetworkRequest;
 import com.eznebula.dto.response.ApiResponse;
+import com.eznebula.dto.response.ClientInfo;
 import com.eznebula.dto.response.JoinNetworkResponse;
 import com.eznebula.service.NetworkService;
 import jakarta.validation.Valid;
@@ -9,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 /**
  * REST controller for network operations
@@ -42,6 +45,16 @@ public class NetworkController {
                 "Successfully joined network",
                 response
         ));
+    }
+
+    /**
+     * Get active clients in a group (for peer discovery)
+     */
+    @GetMapping("/groups/{groupName}/clients")
+    public ResponseEntity<ApiResponse<List<ClientInfo>>> getGroupClients(
+            @PathVariable String groupName) {
+        List<ClientInfo> clients = networkService.getActiveClients(groupName);
+        return ResponseEntity.ok(ApiResponse.success(clients.size() + " clients online", clients));
     }
 
     /**

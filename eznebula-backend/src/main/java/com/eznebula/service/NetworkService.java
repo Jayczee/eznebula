@@ -6,6 +6,7 @@ import com.eznebula.domain.entity.NetworkGroup;
 import com.eznebula.domain.repository.ClientNodeRepository;
 import com.eznebula.domain.repository.NetworkGroupRepository;
 import com.eznebula.dto.request.JoinNetworkRequest;
+import com.eznebula.dto.response.ClientInfo;
 import com.eznebula.dto.response.JoinNetworkResponse;
 import com.eznebula.exception.AuthenticationException;
 import com.eznebula.exception.EzNebulaException;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * Service for managing network operations.
@@ -173,6 +175,22 @@ public class NetworkService {
                 networkGroupRepository.delete(group);
             }
         }
+    }
+
+    /**
+     * Get active clients in a group (for peer discovery)
+     */
+    @Transactional(readOnly = true)
+    public List<ClientInfo> getActiveClients(String groupName) {
+        return networkGroupRepository.findByGroupNameAndActiveTrue(groupName)
+                .map(group -> clientNodeRepository.findByNetworkGroupAndActiveTrue(group).stream()
+                        .map(node -> ClientInfo.builder()
+                                .clientName(node.getClientName())
+                                .virtualIp(node.getVirtualIp())
+                                .lastSeenAt(node.getLastSeenAt() != null ? node.getLastSeenAt().toString() : null)
+                                .build())
+                        .collect(Collectors.toList()))
+                .orElse(Collections.emptyList());
     }
 
     /**

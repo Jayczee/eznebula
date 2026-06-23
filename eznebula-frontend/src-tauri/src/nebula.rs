@@ -21,6 +21,15 @@ const WINTUN_DLL_BYTES: &[u8] = include_bytes!("../binaries/wintun.dll");
 const NEBULA_BIN: &str = if cfg!(windows) { "nebula.exe" } else { "nebula" };
 const TUN_DEV: &str = "eznebula0";
 
+/// Create a Command with CREATE_NO_WINDOW on Windows (no console flash)
+fn hidden_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    { cmd.creation_flags(0x08000000); } // CREATE_NO_WINDOW
+    cmd
+}
+
 // ---- Embedded binary extraction ----
 
 fn extract_embedded_binaries(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -97,7 +106,7 @@ fn read_tun_bytes() -> Result<(u64, u64), String> {
     #[cfg(windows)]
     {
         // Use netsh to read interface stats on Windows
-        let output = Command::new("netsh")
+        let output = hidden_command("netsh")
             .args(["interface", "ip", "show", "subinterfaces"])
             .output()
             .map_err(|e| format!("netsh failed: {}", e))?;
@@ -448,25 +457,33 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         }
     });
 
-    // ---- Start peer discovery task (periodic subnet ping) ----
-    let discovery_ip = d.virtual_ip_with_cidr.clone();
+    // ---- Start peer discovery task (API-based, efficient) ----
+    let discovery_api_url = format!("{}/api/v1/groups/{}/clients",
+        request.server_url.trim_end_matches('/'), request.group_name);
     let discovery_peers = state.peers.clone();
     let discovery_app = app_handle.clone();
     std::thread::spawn(move || {
-        let ip = discovery_ip.split('/').next().unwrap_or("0.0.0.0");
-        let parts: Vec<&str> = ip.split('.').collect();
-        let subnet_prefix = if parts.len() == 4 {
-            format!("{}.{}.{}.", parts[0], parts[1], parts[2])
-        } else {
-            return;
-        };
-        // First scan after 5s (let nebula establish initial connections)
+        let client = reqwest::blocking::Client::new();
+        // First scan after 5s
         std::thread::sleep(std::time::Duration::from_secs(5));
         loop {
-            for i in 1..255 {
-                let target = format!("{}{}", subnet_prefix, i);
-                let _ = measure_latency(&target);
-                std::thread::sleep(std::time::Duration::from_millis(30));
+            // Query API for active clients
+            if let Ok(resp) = client.get(&discovery_api_url).send() {
+                if let Ok(json) = resp.json::<serde_json::Value>() {
+                    if let Some(clients) = json["data"].as_array() {
+                        let mut ips: Vec<String> = Vec::new();
+                        for c in clients {
+                            if let Some(ip) = c["virtualIp"].as_str() {
+                                ips.push(ip.to_string());
+                            }
+                        }
+                        // Ping only known client IPs (much faster than full subnet scan)
+                        for ip in &ips {
+                            let _ = measure_latency(ip);
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        }
+                    }
+                }
             }
             if let Ok(peers) = discovery_peers.lock() {
                 let _ = discovery_app.emit("peers-updated", serde_json::json!(&*peers));
@@ -544,11 +561,11 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
 /// Measure ICMP latency to a VPN IP
 fn measure_latency(vpn_ip: &str) -> Option<f64> {
     let output = if cfg!(windows) {
-        Command::new("ping")
+        hidden_command("ping")
             .args(["-n", "1", "-w", "2000", vpn_ip])
             .output().ok()?
     } else {
-        Command::new("ping")
+        hidden_command("ping")
             .args(["-c", "1", "-W", "2", vpn_ip])
             .output().ok()?
     };
@@ -568,7 +585,7 @@ fn measure_latency(vpn_ip: &str) -> Option<f64> {
 #[tauri::command]
 pub fn disconnect_network(state: State<AppState>) -> Result<(), String> {
     if let Some(mut c) = state.nebula_process.lock().map_err(|e| e.to_string())?.take() { let _ = c.kill(); let _ = c.wait(); }
-    #[cfg(windows)] { let _ = Command::new("taskkill").args(["/F","/IM","nebula.exe"]).stdout(Stdio::null()).stderr(Stdio::null()).status(); }
+    #[cfg(windows)] { let _ = hidden_command("taskkill").args(["/F","/IM","nebula.exe"]).status(); }
     state.network_status.lock().map_err(|e| e.to_string()).map(|mut s| { s.connected = false; s.virtual_ip = None; s.group_name = None; })?;
     *state.connection_time.lock().map_err(|e| e.to_string())? = None;
     *state.network_stats.lock().map_err(|e| e.to_string())? = NetworkStats::default();
