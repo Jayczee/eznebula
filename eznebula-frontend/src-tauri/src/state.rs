@@ -18,7 +18,7 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            network_status: Arc::new(Mutex::new(NetworkStatus { connected: false, virtual_ip: None, group_name: None, uptime_seconds: 0 })),
+            network_status: Arc::new(Mutex::new(NetworkStatus { connected: false, virtual_ip: None, group_name: None, client_name: None, server_url: None, uptime_seconds: 0 })),
             network_stats: Arc::new(Mutex::new(NetworkStats::default())),
             connection_time: Arc::new(Mutex::new(None)),
             nebula_process: Arc::new(Mutex::new(None)),

@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * REST controller for network operations
@@ -55,6 +56,30 @@ public class NetworkController {
             @PathVariable String groupName) {
         List<ClientInfo> clients = networkService.getActiveClients(groupName);
         return ResponseEntity.ok(ApiResponse.success(clients.size() + " clients online", clients));
+    }
+
+    /**
+     * Client heartbeat — keeps the client marked as active.
+     * POST /api/v1/heartbeat
+     */
+    @PostMapping("/heartbeat")
+    public ResponseEntity<ApiResponse<String>> heartbeat(@RequestBody java.util.Map<String, String> body) {
+        String groupName = body.get("groupName");
+        String clientName = body.get("clientName");
+        networkService.heartbeat(groupName, clientName);
+        return ResponseEntity.ok(ApiResponse.success("ok"));
+    }
+
+    /**
+     * Client disconnect — marks client as inactive immediately.
+     * POST /api/v1/leave
+     */
+    @PostMapping("/leave")
+    public ResponseEntity<ApiResponse<String>> leave(@RequestBody java.util.Map<String, String> body) {
+        String groupName = body.get("groupName");
+        String clientName = body.get("clientName");
+        networkService.leave(groupName, clientName);
+        return ResponseEntity.ok(ApiResponse.success("ok"));
     }
 
     /**

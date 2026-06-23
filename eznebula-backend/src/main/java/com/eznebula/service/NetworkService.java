@@ -157,24 +157,69 @@ public class NetworkService {
     }
 
     /**
-     * Periodic cleanup: delete groups that have no active clients.
-     * Runs every 60 seconds.
+     * Periodic cleanup: mark stale clients inactive, delete empty groups.
+     * Runs every 30 seconds.
      */
-    @Scheduled(fixedRate = 60_000)
+    @Scheduled(fixedRate = 30_000)
     @Transactional
-    public void cleanupEmptyGroups() {
+    public void cleanupStaleClients() {
         List<NetworkGroup> allGroups = networkGroupRepository.findAll();
+        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(90);
 
         for (NetworkGroup group : allGroups) {
             List<ClientNode> clients = clientNodeRepository.findByNetworkGroupAndActiveTrue(group);
-            if (clients.isEmpty()) {
+            int staleCount = 0;
+            for (ClientNode client : clients) {
+                if (client.getLastSeenAt() == null || client.getLastSeenAt().isBefore(cutoff)) {
+                    client.setActive(false);
+                    clientNodeRepository.save(client);
+                    staleCount++;
+                    log.info("Marked stale client inactive: {} ({})", client.getClientName(), client.getVirtualIp());
+                }
+            }
+            // Delete groups with no active clients
+            List<ClientNode> remaining = clientNodeRepository.findByNetworkGroupAndActiveTrue(group);
+            if (remaining.isEmpty()) {
                 log.info("Auto-deleting empty group: {}", group.getGroupName());
-                // Delete all clients (including inactive) before deleting group
                 List<ClientNode> allClients = clientNodeRepository.findByNetworkGroup(group);
                 clientNodeRepository.deleteAll(allClients);
                 networkGroupRepository.delete(group);
             }
         }
+    }
+
+    /**
+     * Client heartbeat — updates lastSeenAt to keep the client active.
+     */
+    @Transactional
+    public void heartbeat(String groupName, String clientName) {
+        networkGroupRepository.findByGroupNameAndActiveTrue(groupName).ifPresent(group -> {
+            clientNodeRepository.findByNetworkGroupAndActiveTrue(group).stream()
+                    .filter(c -> c.getClientName().equals(clientName))
+                    .findFirst()
+                    .ifPresent(client -> {
+                        client.setLastSeenAt(LocalDateTime.now());
+                        client.setActive(true);
+                        clientNodeRepository.save(client);
+                    });
+        });
+    }
+
+    /**
+     * Client disconnect — marks client as inactive immediately.
+     */
+    @Transactional
+    public void leave(String groupName, String clientName) {
+        networkGroupRepository.findByGroupNameAndActiveTrue(groupName).ifPresent(group -> {
+            clientNodeRepository.findByNetworkGroupAndActiveTrue(group).stream()
+                    .filter(c -> c.getClientName().equals(clientName))
+                    .findFirst()
+                    .ifPresent(client -> {
+                        client.setActive(false);
+                        clientNodeRepository.save(client);
+                        log.info("Client {} left group {}", clientName, groupName);
+                    });
+        });
     }
 
     /**

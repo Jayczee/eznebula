@@ -377,7 +377,16 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     let traffic_tracker = peer_traffic::PeerTrafficTracker::start(TUN_DEV);
     let tracker_counters = traffic_tracker.counters.clone();
 
-    // ---- Start stats background task ----
+    // Clone connection info for background tasks
+    let srv_url = request.server_url.trim_end_matches('/').to_string();
+    let group_name = request.group_name.clone();
+    let client_name = request.client_name.clone();
+
+    let hb_url = format!("{}/api/v1/heartbeat", srv_url);
+    let hb_client = reqwest::blocking::Client::new();
+    let hb_body = serde_json::json!({"groupName": group_name, "clientName": client_name}).to_string();
+
+    // ---- Start stats background task (includes heartbeat) ----
     let stats_state = state.network_stats.clone();
     let peers_state = state.peers.clone();
     let peer_last_state = state.peer_last_bytes.clone();
@@ -386,8 +395,14 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         let mut last_rx: u64 = 0;
         let mut last_tx: u64 = 0;
         let mut last_time = Instant::now();
+        let mut tick: u64 = 0;
         loop {
             std::thread::sleep(std::time::Duration::from_secs(1));
+            tick += 1;
+            // Heartbeat every 30s
+            if tick % 30 == 0 {
+                let _ = hb_client.post(&hb_url).header("Content-Type", "application/json").body(hb_body.clone()).send();
+            }
             if let Ok((rx, tx)) = read_tun_bytes() {
                 let now = Instant::now();
                 let dt = now.duration_since(last_time).as_secs_f64().max(0.1);
@@ -458,8 +473,7 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     });
 
     // ---- Start peer discovery task (API-based, efficient) ----
-    let discovery_api_url = format!("{}/api/v1/groups/{}/clients",
-        request.server_url.trim_end_matches('/'), request.group_name);
+    let discovery_api_url = format!("{}/api/v1/groups/{}/clients", srv_url, group_name);
     let discovery_peers = state.peers.clone();
     let discovery_app = app_handle.clone();
     std::thread::spawn(move || {
@@ -496,7 +510,10 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     state.nebula_process.lock().map_err(|e| e.to_string())?.replace(child);
     state.network_status.lock().map_err(|e| e.to_string()).map(|mut s| {
         s.connected = true; s.virtual_ip = Some(d.virtual_ip_with_cidr.clone());
-        s.group_name = Some(request.group_name); s.uptime_seconds = 0;
+        s.group_name = Some(group_name.clone());
+        s.client_name = Some(client_name.clone());
+        s.server_url = Some(srv_url.clone());
+        s.uptime_seconds = 0;
     })?;
     state.connection_time.lock().map_err(|e| e.to_string())?.replace(Instant::now());
     Ok(format!("Connected: {}", d.virtual_ip_with_cidr))
@@ -584,9 +601,21 @@ fn measure_latency(vpn_ip: &str) -> Option<f64> {
 
 #[tauri::command]
 pub fn disconnect_network(state: State<AppState>) -> Result<(), String> {
+    // Send leave notification before killing nebula
+    let leave_info = {
+        let s = state.network_status.lock().map_err(|e| e.to_string())?;
+        (s.server_url.clone(), s.group_name.clone(), s.client_name.clone())
+    };
+    if let (Some(url), Some(group), Some(client)) = leave_info {
+        let _ = reqwest::blocking::Client::new()
+            .post(format!("{}/api/v1/leave", url.trim_end_matches('/')))
+            .json(&serde_json::json!({"groupName": group, "clientName": client}))
+            .send();
+    }
+
     if let Some(mut c) = state.nebula_process.lock().map_err(|e| e.to_string())?.take() { let _ = c.kill(); let _ = c.wait(); }
     #[cfg(windows)] { let _ = hidden_command("taskkill").args(["/F","/IM","nebula.exe"]).status(); }
-    state.network_status.lock().map_err(|e| e.to_string()).map(|mut s| { s.connected = false; s.virtual_ip = None; s.group_name = None; })?;
+    state.network_status.lock().map_err(|e| e.to_string()).map(|mut s| { s.connected = false; s.virtual_ip = None; s.group_name = None; s.client_name = None; s.server_url = None; })?;
     *state.connection_time.lock().map_err(|e| e.to_string())? = None;
     *state.network_stats.lock().map_err(|e| e.to_string())? = NetworkStats::default();
     *state.peers.lock().map_err(|e| e.to_string())? = Vec::new();

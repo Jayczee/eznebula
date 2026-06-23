@@ -23,7 +23,7 @@ pub struct JoinResponse { pub virtual_ip_with_cidr: String, pub client_certifica
 pub struct ApiResponse<T> { pub success: bool, pub message: Option<String>, pub data: Option<T> }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkStatus { pub connected: bool, pub virtual_ip: Option<String>, pub group_name: Option<String>, pub uptime_seconds: u64 }
+pub struct NetworkStatus { pub connected: bool, pub virtual_ip: Option<String>, pub group_name: Option<String>, pub client_name: Option<String>, pub server_url: Option<String>, pub uptime_seconds: u64 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NetworkStats { pub rx_bytes: u64, pub tx_bytes: u64, pub rx_speed: f64, pub tx_speed: f64 }
