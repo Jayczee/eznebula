@@ -129,60 +129,6 @@ fn read_tun_bytes() -> Result<(u64, u64), String> {
     { Ok((0, 0)) }
 }
 
-// ---- Per-peer traffic tracking: pcap (Linux), proportional (others) ----
-mod peer_traffic {
-    use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
-
-    pub struct PeerTrafficTracker {
-        pub counters: Arc<Mutex<HashMap<String, (u64, u64)>>>,
-    }
-
-    #[cfg(target_os = "linux")]
-    impl PeerTrafficTracker {
-        pub fn start(iface: &str) -> Self {
-            let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
-            let c = counters.clone();
-            let iface = iface.to_string();
-            std::thread::spawn(move || {
-                let mut cap = match pcap::Capture::from_device(&iface[..])
-                    .ok().and_then(|c| c.promisc(false).snaplen(128).timeout(1000).open().ok())
-                {
-                    Some(c) => c,
-                    None => { log::warn!("pcap: failed to open {}", iface); return; }
-                };
-                let _ = cap.filter("ip", true);
-                let local_prefix = "10.168.";
-                loop {
-                    match cap.next_packet() {
-                        Ok(packet) => {
-                            let data = &packet.data;
-                            if data.len() < 20 { continue; }
-                            let len = u16::from_be_bytes([data[2], data[3]]) as u64;
-                            let src = format!("{}.{}.{}.{}", data[12], data[13], data[14], data[15]);
-                            let dst = format!("{}.{}.{}.{}", data[16], data[17], data[18], data[19]);
-                            if let Ok(mut m) = c.lock() {
-                                if dst.starts_with(local_prefix) { m.entry(dst).or_insert((0,0)).1 += len; }
-                                if src.starts_with(local_prefix) { m.entry(src).or_insert((0,0)).0 += len; }
-                            }
-                        }
-                        Err(pcap::Error::TimeoutExpired) => continue,
-                        Err(_) => break,
-                    }
-                }
-            });
-            PeerTrafficTracker { counters }
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    impl PeerTrafficTracker {
-        pub fn start(_iface: &str) -> Self {
-            PeerTrafficTracker { counters: Arc::new(Mutex::new(HashMap::new())) }
-        }
-    }
-}
-
 // ---- Nebula stdout parser ----
 
 /// Parse a nebula stdout line and extract peer/tunnel information
@@ -356,10 +302,6 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         });
     }
 
-    // ---- Start per-peer traffic tracker (pcap) ----
-    let traffic_tracker = peer_traffic::PeerTrafficTracker::start(TUN_DEV);
-    let tracker_counters = traffic_tracker.counters.clone();
-
     // Clone connection info for background tasks
     let srv_url = request.server_url.trim_end_matches('/').to_string();
     let group_name = request.group_name.clone();
@@ -398,28 +340,8 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
                     stats.tx_speed = tx_speed;
                 }
 
-                // Per-peer traffic
-                if let Ok(mut peers) = peers_state.lock() {
-                    let now = std::time::Instant::now();
-                    let pc = peers.len().max(1) as u64;
-                    for peer in peers.iter_mut() {
-                        let (peer_rx, peer_tx) = {
-                            #[cfg(target_os = "linux")]
-                            { tracker_counters.lock().ok().and_then(|m| m.get(&peer.vpn_ip).copied()).unwrap_or((rx / pc, tx / pc)) }
-                            #[cfg(not(target_os = "linux"))]
-                            { (rx / pc, tx / pc) }
-                        };
-                        if let Ok(mut last_map) = peer_last_state.lock() {
-                            if let Some(&(lr, lt, lt2)) = last_map.get(&peer.vpn_ip) {
-                                let dt = now.duration_since(lt2).as_secs_f64().max(0.1);
-                                peer.rx_speed = if peer_rx >= lr { (peer_rx - lr) as f64 / dt } else { 0.0 };
-                                peer.tx_speed = if peer_tx >= lt { (peer_tx - lt) as f64 / dt } else { 0.0 };
-                            }
-                            last_map.insert(peer.vpn_ip.clone(), (peer_rx, peer_tx, now));
-                        }
-                        peer.rx_bytes = peer_rx;
-                        peer.tx_bytes = peer_tx;
-                    }
+                // Emit peer updates (without traffic stats on non-Linux)
+                if let Ok(peers) = peers_state.lock() {
                     let _ = app_handle3.emit("peers-updated", serde_json::json!(&*peers));
                 }
                 last_rx = rx;

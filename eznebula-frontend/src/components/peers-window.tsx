@@ -1,22 +1,9 @@
 import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { RefreshCw, Zap, Satellite, ArrowDown, ArrowUp } from "lucide-react"
+import { RefreshCw, Zap, Satellite } from "lucide-react"
 import { listen } from "@tauri-apps/api/event"
 import { eznebulaApi, type NetworkStatus, type PeerInfo } from "@/lib/api"
-
-function fmtBytes(b: number) {
-  if (b >= 1_073_741_824) return `${(b / 1_073_741_824).toFixed(1)} GB`
-  if (b >= 1_048_576) return `${(b / 1_048_576).toFixed(1)} MB`
-  if (b >= 1024) return `${(b / 1024).toFixed(0)} KB`
-  return `${b} B`
-}
-
-function fmtSpeed(bps: number) {
-  if (bps >= 1_048_576) return `${(bps / 1_048_576).toFixed(1)} MB/s`
-  if (bps >= 1024) return `${(bps / 1024).toFixed(0)} KB/s`
-  return `${bps.toFixed(0)} B/s`
-}
 
 function LatencyBadge({ ms }: { ms: number | null }) {
   if (ms === null) return <span className="text-[10px] text-muted-foreground">—</span>
@@ -121,15 +108,6 @@ export default function PeersWindow() {
                     </Badge>
                   </div>
                 </div>
-                {/* 流量 */}
-                {(peer.rx_bytes > 0 || peer.tx_bytes > 0) && (
-                  <div className="flex items-center gap-3 text-[10px]">
-                    <span className="flex items-center gap-0.5 text-green-600"><ArrowDown className="size-2.5"/>{fmtBytes(peer.rx_bytes)}</span>
-                    <span className="text-green-600 font-semibold">{fmtSpeed(peer.rx_speed)}</span>
-                    <span className="flex items-center gap-0.5 text-blue-600"><ArrowUp className="size-2.5"/>{fmtBytes(peer.tx_bytes)}</span>
-                    <span className="text-blue-600 font-semibold">{fmtSpeed(peer.tx_speed)}</span>
-                  </div>
-                )}
               </div>
             ))}
             {/* 底部信息 */}
