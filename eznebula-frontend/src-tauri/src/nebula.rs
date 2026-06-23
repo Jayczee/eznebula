@@ -685,12 +685,25 @@ pub fn get_peers(state: State<AppState>) -> Result<Vec<PeerInfo>, String> {
 
 #[tauri::command]
 pub fn discover_peers(state: State<AppState>) -> Result<(), String> {
-    let peers = state.peers.lock().map_err(|e| e.to_string())?;
-    // Trigger pings for all known peer IPs (and nearby IPs) to refresh hostmap
-    let targets: Vec<String> = peers.iter().map(|p| p.vpn_ip.clone()).collect();
+    // Query API for active clients, then ping all of them
+    let (server_url, group_name) = {
+        let s = state.network_status.lock().map_err(|e| e.to_string())?;
+        (s.server_url.clone(), s.group_name.clone())
+    };
+    let client = reqwest::blocking::Client::new();
+    let targets: Vec<String> = if let (Some(url), Some(group)) = (server_url, group_name) {
+        if let Ok(resp) = client.get(format!("{}/api/v1/groups/{}/clients", url, group)).send() {
+            if let Ok(json) = resp.json::<serde_json::Value>() {
+                json["data"].as_array().map(|a| a.iter()
+                    .filter_map(|c| c["virtualIp"].as_str().map(|s| s.to_string()))
+                    .collect()).unwrap_or_default()
+            } else { Vec::new() }
+        } else { Vec::new() }
+    } else { Vec::new() };
     std::thread::spawn(move || {
         for ip in &targets {
             let _ = measure_latency(ip);
+            std::thread::sleep(std::time::Duration::from_millis(100));
         }
     });
     Ok(())
