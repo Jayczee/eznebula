@@ -484,8 +484,9 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
 /// Measure ICMP latency to a VPN IP
 fn measure_latency(vpn_ip: &str) -> Option<f64> {
     let output = if cfg!(windows) {
-        hidden_command("ping")
-            .args(["-n", "1", "-w", "2000", vpn_ip])
+        // chcp 437 forces English codepage so ping output is parseable
+        hidden_command("cmd")
+            .args(["/C", &format!("chcp 437 > nul && ping -n 1 -w 2000 {}", vpn_ip)])
             .output().ok()?
     } else {
         hidden_command("ping")
@@ -493,14 +494,12 @@ fn measure_latency(vpn_ip: &str) -> Option<f64> {
             .output().ok()?
     };
     let text = String::from_utf8_lossy(&output.stdout);
-    // Parse "time=XXms" / "时间=XXms" / "time<1ms" / "时间<1ms"
-    for keyword in &["time", "时间"] {
-        if let Some(pos) = text.find(keyword) {
-            let rest = &text[pos + keyword.len()..];
-            let rest = rest.trim_start_matches(['=', '<', ' ']);
-            if let Some(end) = rest.find("ms") {
-                return rest[..end].trim().parse::<f64>().ok();
-            }
+    // Parse "time=XXms" or "time<1ms" or "time=XX.X ms"
+    if let Some(pos) = text.find("time") {
+        let rest = &text[pos + 4..];
+        let rest = rest.trim_start_matches(['=', '<', ' ']);
+        if let Some(end) = rest.find("ms") {
+            return rest[..end].trim().parse::<f64>().ok();
         }
     }
     None
