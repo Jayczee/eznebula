@@ -141,7 +141,7 @@ fn parse_nebula_line(line: &str) -> Option<NebulaLogEvent> {
     }
     // Parse Tunnel status: "Tunnel status" certName=xxx ... method:active state:alive vpnAddrs=[10.168.4.21]
     if line.contains("Tunnel status") {
-        let method = if line.contains("method:active") { "p2p" } else { "relay" };
+        let method = "p2p"; // default, only changed to relay by P2pTimeout/RelayTest events
         let state = if line.contains("state:alive") { "alive" }
             else if line.contains("state:dead") { "dead" }
             else { "testing" };
@@ -450,7 +450,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                 if is_lighthouse(&vpn_ip) { return; }
                 if let Some(peer) = peers.iter_mut().find(|p| p.vpn_ip == vpn_ip) {
                     if !cert_name.is_empty() { peer.hostname = cert_name; }
-                    peer.connection_type = method;
+                    if peer.connection_type != "relay" { peer.connection_type = method.to_string(); }
                     peer.state = state;
                     peer.local_index = local_index;
                     peer.remote_index = remote_index;
