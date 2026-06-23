@@ -426,7 +426,6 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     let client_name = request.client_name.clone();
 
     let hb_url = format!("{}/api/v1/heartbeat", srv_url);
-    let hb_client = reqwest::blocking::Client::new();
     let hb_body = serde_json::json!({"groupName": group_name, "clientName": client_name}).to_string();
 
     // ---- Start stats background task (includes heartbeat) ----
@@ -444,7 +443,7 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
             tick += 1;
             // Heartbeat every 30s
             if tick % 30 == 0 {
-                let _ = hb_client.post(&hb_url).header("Content-Type", "application/json").body(hb_body.clone()).send();
+                let _ = ureq::post(&hb_url).set("Content-Type", "application/json").send_string(&hb_body);
             }
             if let Ok((rx, tx)) = read_tun_bytes() {
                 let now = Instant::now();
@@ -520,13 +519,12 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
     let discovery_peers = state.peers.clone();
     let discovery_app = app_handle.clone();
     std::thread::spawn(move || {
-        let client = reqwest::blocking::Client::new();
         // First scan after 5s
         std::thread::sleep(std::time::Duration::from_secs(5));
         loop {
             // Query API for active clients
-            if let Ok(resp) = client.get(&discovery_api_url).send() {
-                if let Ok(json) = resp.json::<serde_json::Value>() {
+            if let Ok(resp) = ureq::get(&discovery_api_url).call() {
+                if let Ok(json) = resp.into_json::<serde_json::Value>() {
                     if let Some(clients) = json["data"].as_array() {
                         let mut ips: Vec<String> = Vec::new();
                         for c in clients {
@@ -650,10 +648,10 @@ pub fn disconnect_network(state: State<AppState>) -> Result<(), String> {
         (s.server_url.clone(), s.group_name.clone(), s.client_name.clone())
     };
     if let (Some(url), Some(group), Some(client)) = leave_info {
-        let _ = reqwest::blocking::Client::new()
-            .post(format!("{}/api/v1/leave", url.trim_end_matches('/')))
-            .json(&serde_json::json!({"groupName": group, "clientName": client}))
-            .send();
+        let body = serde_json::json!({"groupName": group, "clientName": client}).to_string();
+        let _ = ureq::post(&format!("{}/api/v1/leave", url.trim_end_matches('/')))
+            .set("Content-Type", "application/json")
+            .send_string(&body);
     }
 
     if let Some(mut c) = state.nebula_process.lock().map_err(|e| e.to_string())?.take() { let _ = c.kill(); let _ = c.wait(); }
@@ -690,10 +688,9 @@ pub fn discover_peers(state: State<AppState>) -> Result<(), String> {
         let s = state.network_status.lock().map_err(|e| e.to_string())?;
         (s.server_url.clone(), s.group_name.clone())
     };
-    let client = reqwest::blocking::Client::new();
     let targets: Vec<String> = if let (Some(url), Some(group)) = (server_url, group_name) {
-        if let Ok(resp) = client.get(format!("{}/api/v1/groups/{}/clients", url, group)).send() {
-            if let Ok(json) = resp.json::<serde_json::Value>() {
+        if let Ok(resp) = ureq::get(&format!("{}/api/v1/groups/{}/clients", url, group)).call() {
+            if let Ok(json) = resp.into_json::<serde_json::Value>() {
                 json["data"].as_array().map(|a| a.iter()
                     .filter_map(|c| c["virtualIp"].as_str().map(|s| s.to_string()))
                     .collect()).unwrap_or_default()
