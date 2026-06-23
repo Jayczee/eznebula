@@ -72,7 +72,8 @@
       },
       "nsis": {
         "languages": ["SimpChinese", "English"],
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerHooks": "npcap-hook.nsh"
       }
     }
   }

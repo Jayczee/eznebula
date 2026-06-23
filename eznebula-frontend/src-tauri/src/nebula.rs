@@ -129,7 +129,7 @@ fn read_tun_bytes() -> Result<(u64, u64), String> {
     { Ok((0, 0)) }
 }
 
-// ---- Per-peer traffic tracking: pcap on all platforms ----
+// ---- Per-peer traffic tracking ----
 mod peer_traffic {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -138,6 +138,7 @@ mod peer_traffic {
         pub counters: Arc<Mutex<HashMap<String, (u64, u64)>>>, // vpn_ip -> (rx_bytes, tx_bytes)
     }
 
+    #[cfg(feature = "npcap")]
     impl PeerTrafficTracker {
         pub fn start(iface: &str) -> Self {
             let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -171,6 +172,13 @@ mod peer_traffic {
                 }
             });
             PeerTrafficTracker { counters }
+        }
+    }
+
+    #[cfg(not(feature = "npcap"))]
+    impl PeerTrafficTracker {
+        pub fn start(_iface: &str) -> Self {
+            PeerTrafficTracker { counters: Arc::new(Mutex::new(HashMap::new())) }
         }
     }
 }
@@ -393,13 +401,21 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
                     stats.tx_speed = tx_speed;
                 }
 
-                // Per-peer traffic: pcap across all platforms
+                // Per-peer traffic: pcap (if feature enabled) or proportional
                 if let Ok(mut peers) = peers_state.lock() {
                     let now = std::time::Instant::now();
+                    let pc = peers.len().max(1) as u64;
                     for peer in peers.iter_mut() {
-                        let (peer_rx, peer_tx) = tracker_counters.lock().ok()
-                            .and_then(|m| m.get(&peer.vpn_ip).copied())
-                            .unwrap_or((0, 0));
+                        let (peer_rx, peer_tx) = {
+                            #[cfg(feature = "npcap")]
+                            {
+                                tracker_counters.lock().ok()
+                                    .and_then(|m| m.get(&peer.vpn_ip).copied())
+                                    .unwrap_or((rx / pc, tx / pc))
+                            }
+                            #[cfg(not(feature = "npcap"))]
+                            { (rx / pc, tx / pc) }
+                        };
                         if let Ok(mut last_map) = peer_last_state.lock() {
                             if let Some(&(lr, lt, lt2)) = last_map.get(&peer.vpn_ip) {
                                 let dt = now.duration_since(lt2).as_secs_f64().max(0.1);
