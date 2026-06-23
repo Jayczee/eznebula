@@ -63,7 +63,8 @@
     ],
     "resources": [
       "binaries/nebula.exe",
-      "binaries/wintun.dll"
+      "binaries/wintun.dll",
+      "binaries/npcap-installer.exe"
     ],
     "windows": {
       "wix": {

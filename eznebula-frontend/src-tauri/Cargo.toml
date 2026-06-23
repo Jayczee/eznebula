@@ -32,8 +32,6 @@ url = "2"
 image = "0.25"
 
 ureq = { version = "2", features = ["json"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
 pcap = "2"
 
 [profile.release]
