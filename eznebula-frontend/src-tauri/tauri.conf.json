@@ -63,8 +63,7 @@
     ],
     "resources": [
       "binaries/nebula.exe",
-      "binaries/wintun.dll",
-      "binaries/npcap-installer.exe"
+      "binaries/wintun.dll"
     ],
     "windows": {
       "wix": {
@@ -72,8 +71,7 @@
       },
       "nsis": {
         "languages": ["SimpChinese", "English"],
-        "installMode": "currentUser",
-        "installerHooks": "npcap-hook.nsh"
+        "installMode": "currentUser"
       }
     }
   }

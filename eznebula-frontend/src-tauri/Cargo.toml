@@ -32,11 +32,12 @@ url = "2"
 image = "0.25"
 
 ureq = { version = "2", features = ["json"] }
-pcap = { version = "2", optional = true }
 
-[features]
-default = []
-npcap = ["pcap"]
+[target.'cfg(target_os = "linux")'.dependencies]
+pcap = "2"
+
+[target.'cfg(windows)'.dependencies]
+windivert = { version = "0.7.0-beta.4", features = ["vendored"] }
 
 [profile.release]
 codegen-units = 1
