@@ -143,12 +143,8 @@ mod peer_traffic {
         pub fn start(_iface: &str) -> Self {
             let counters: Arc<Mutex<HashMap<String, (u64, u64)>>> = Arc::new(Mutex::new(HashMap::new()));
             let c = counters.clone();
-            std::thread::spawn(move || {
-                let flags = {
-                    let mut f = windivert::prelude::WinDivertFlags::default();
-                    f.set_sniff();
-                    f
-                };
+            let _ = std::thread::Builder::new().stack_size(4 * 1024 * 1024).spawn(move || {
+                let flags = windivert::prelude::WinDivertFlags::default().set_sniff();
                 let handle = match windivert::WinDivert::network(
                     "ip and (ip.SrcAddr >= 10.168.0.0 or ip.DstAddr >= 10.168.0.0)",
                     0, flags,
