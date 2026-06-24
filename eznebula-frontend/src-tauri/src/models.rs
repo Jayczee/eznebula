@@ -13,7 +13,7 @@ pub struct ServerEntry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct JoinRequest { pub server_url: String, pub group_name: String, pub join_token: String, pub client_name: String }
+pub struct JoinRequest { pub server_url: String, pub group_name: String, pub join_token: String, pub client_name: String, #[serde(default)] pub force_relay: bool }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

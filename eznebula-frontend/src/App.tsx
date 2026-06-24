@@ -74,7 +74,7 @@ export default function App() {
     setServerDropdownOpen(false)
   }, [])
 
-  const doConnect = useCallback(async () => { setConnState("connecting"); try { await eznebulaApi.joinNetwork({ server_url: serverUrl.trim(), group_name: groupName.trim(), join_token: "", client_name: clientName.trim() || "eznebula-node" }); setConnState("connected"); setStatus(await eznebulaApi.getStatus()) } catch (e: any) { setErrorMsg(String(e)); setErrorOpen(true); setConnState("idle") } }, [serverUrl, groupName, clientName])
+  const doConnect = useCallback(async () => { setConnState("connecting"); try { await eznebulaApi.joinNetwork({ server_url: serverUrl.trim(), group_name: groupName.trim(), join_token: "", client_name: clientName.trim() || "eznebula-node", force_relay: forceRelay }); setConnState("connected"); setStatus(await eznebulaApi.getStatus()) } catch (e: any) { setErrorMsg(String(e)); setErrorOpen(true); setConnState("idle") } }, [serverUrl, groupName, clientName, forceRelay])
   const doDisconnect = useCallback(async () => { setConnState("stopping"); try { await eznebulaApi.disconnectNetwork() } catch (e: any) { setErrorMsg(String(e)); setErrorOpen(true) } finally { setConnState("idle"); setStatus(null); setStats(null); setSpeedRx(0); setSpeedTx(0) } }, [])
 
   return (

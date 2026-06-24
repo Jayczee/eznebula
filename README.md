@@ -1,109 +1,133 @@
-# EZNebula Project
+# EZNebula
 
-基于 Nebula 的现代化极简跨平台虚拟局域网客户端
+基于 [Nebula](https://github.com/slackhq/nebula) 的现代化极简虚拟局域网客户端，一键组建安全的 P2P 加密网络。
+
+---
+
+## 特性
+
+- **一键组网** — 输入服务器地址和组名即可加入虚拟局域网
+- **P2P 直连** — 自动 NAT 穿透，节点间低延迟直连
+- **强制中转** — 支持强制走 Lighthouse 中转，应对复杂网络环境
+- **实时延迟** — 每个对端节点显示 ICMP 延迟
+- **跨平台客户端** — Windows / Linux / macOS（基于 Tauri v2）
+- **自动证书管理** — 服务端自动签发 Nebula 证书，客户端零配置
+
+---
+
+## 架构
+
+```
+┌─────────────────────────┐      ┌──────────────────────────┐
+│   桌面客户端 (Tauri)      │      │   服务端 (Spring Boot)     │
+│                          │      │                          │
+│  React 19 + Tailwind 4  │◄────►│  REST API                │
+│  Rust (Nebula 管理)      │      │  CA 证书签发              │
+│  nebula.exe (SD-WAN)    │      │  Lighthouse 中转          │
+│                          │      │  SQLite 持久化            │
+└─────────────────────────┘      └──────────────────────────┘
+```
+
+---
+
+## 快速开始
+
+### 1. 启动服务端
+
+```bash
+cd eznebula-backend
+
+# 编辑 lighthouse 公网 IP
+# 修改 src/main/resources/application.yml 中 eznebula.lighthouse.public-ip
+
+mvn spring-boot:run
+```
+
+### 2. 启动客户端
+
+下载 [Releases](../../releases) 中的 `EZNebula-portable.exe` 直接运行，或从源码构建：
+
+```bash
+cd eznebula-frontend
+bun install
+bun run tauri dev      # 开发模式
+bun run tauri build    # 生产构建
+```
+
+### 3. 连接网络
+
+1. 打开客户端，输入服务器地址（如 `http://your-server:8080`）
+2. 填写组名和设备名
+3. 可选：勾选 **强制中转** 让流量全部走 Lighthouse 中转
+4. 点击 **连接**
+
+---
 
 ## 项目结构
 
 ```
 eznebula/
-├── eznebula-backend/          # Spring Boot 服务端
-│   ├── src/
-│   │   └── main/
-│   │       ├── java/com/eznebula/
-│   │       │   ├── config/           # 配置类
-│   │       │   ├── controller/       # REST 控制器
-│   │       │   ├── domain/           # 实体和仓储
-│   │       │   ├── dto/              # 数据传输对象
-│   │       │   ├── exception/        # 异常处理
-│   │       │   └── service/          # 业务逻辑层
-│   │       └── resources/
-│   │           └── application.yml   # 配置文件
-│   ├── pom.xml
-│   └── README.md
-└── eznebula-frontend/         # Tauri + React 客户端 (待开发)
+├── eznebula-backend/               # Spring Boot 服务端
+│   └── src/main/java/com/eznebula/
+│       ├── controller/             # REST API
+│       ├── service/                # 业务逻辑（CA、网络管理、IP分配）
+│       ├── domain/                 # JPA 实体和仓储
+│       └── dto/                    # 请求/响应 DTO
+├── eznebula-frontend/              # Tauri + React 桌面客户端
+│   ├── src/                        # React 前端
+│   │   ├── components/             # UI 组件
+│   │   └── lib/                    # API 封装、工具函数
+│   └── src-tauri/src/              # Rust 后端
+│       ├── nebula.rs               # Nebula 进程管理、配置生成、日志解析
+│       ├── network.rs              # 服务器测速、RTT 测量
+│       ├── crypto.rs               # X25519 密钥生成
+│       ├── models.rs               # 数据模型
+│       └── state.rs                # 全局状态
+├── binaries/                       # Nebula 二进制文件（各平台）
+├── Dockerfile                      # Docker 部署
+└── docker-compose.yml
 ```
 
-## 阶段一完成情况 ✅
+---
 
-### 已完成的功能
+## API 接口
 
-1. **完整的分层架构**
-   - Controller 层：REST API 接口
-   - Service 层：业务逻辑
-   - Repository 层：数据访问
-   - 统一异常处理
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/v1/join` | 客户端加入网络（签发证书、分配 IP） |
+| POST | `/api/v1/heartbeat` | 心跳上报 |
+| POST | `/api/v1/leave` | 离开网络 |
+| GET | `/api/v1/groups/{name}/clients` | 查询组内在线客户端 |
+| GET | `/api/v1/health` | 健康检查 |
+| POST | `/api/v1/admin/groups` | 创建网络组 |
+| GET | `/api/v1/admin/groups` | 查询所有组 |
+| DELETE | `/api/v1/admin/groups/{name}` | 删除网络组 |
 
-2. **核心实体类**
-   - `NetworkGroup`：网络组管理
-   - `ClientNode`：客户端节点信息
-
-3. **服务组件**
-   - `NebulaCertService`：封装 nebula-cert 命令行工具
-   - `NetworkService`：处理客户端加入网络的核心逻辑
-   - `IpAllocationService`：虚拟 IP 地址分配和管理
-
-4. **API 接口**
-   - `POST /api/v1/join`：客户端加入网络 (核心接口)
-   - `POST /api/v1/admin/groups`：创建网络组
-   - `GET /api/v1/admin/groups`：查询网络组
-   - `DELETE /api/v1/admin/groups/{groupName}`：删除网络组
-   - `GET /api/v1/health`：健康检查
-
-5. **安全特性**
-   - 常量时间字符串比较防止时间攻击
-   - 数据库悲观锁防止 IP 分配竞争
-   - 参数验证和异常处理
-   - CA 私钥仅存储在服务端
-
-### 技术亮点
-
-- **设计模式**：分层架构、工厂模式、策略模式
-- **线程安全**：悲观锁保证 IP 分配不冲突
-- **安全性**：防时序攻击、输入验证、错误处理
-- **可维护性**：清晰的代码结构、完整的日志记录
-
-## 快速开始
-
-### 前置要求
-
-1. Java 17+
-2. Maven 3.6+
-3. nebula-cert 工具 (下载自 https://github.com/slackhq/nebula/releases)
-
-### 启动服务端
-
-```bash
-cd eznebula-backend
-
-# 编译
-mvn clean package
-
-# 运行
-java -jar target/eznebula-backend-1.0.0.jar
-```
-
-### 配置
-
-编辑 `application.yml` 设置 Lighthouse 公网 IP：
-
-```yaml
-eznebula:
-  lighthouse:
-    public-ip: YOUR_PUBLIC_IP  # 替换为你的公网 IP
-```
-
-## 下一步：阶段二
-
-准备开发 Tauri (Rust) 客户端：
-
-1. 使用 Rust 生成 Nebula Ed25519 密钥对
-2. 调用后端 API 获取签发的证书
-3. 动态生成 `config.yaml`
-4. 启动和管理 Nebula 进程
-5. 监控网络流量和节点状态
+---
 
 ## 技术栈
 
-- **后端**：Java 17 + Spring Boot 3.2.5 + SQLite
-- **前端**：Rust (Tauri) + React + TailwindCSS + shadcn/ui
-- **核心**：Nebula (Slack 开源 SD-WAN)
+| 层级 | 技术 |
+|------|------|
+| 桌面框架 | Tauri v2 |
+| 前端 UI | React 19 + TypeScript + TailwindCSS 4 + shadcn/ui |
+| 客户端后端 | Rust (Nebula 进程管理、密钥生成) |
+| 服务端 | Java 17 + Spring Boot 3.2 + SQLite |
+| SD-WAN | [Nebula](https://github.com/slackhq/nebula) (Slack) |
+| 打包 | NSIS / WiX (Windows), AppImage / deb (Linux), DMG (macOS) |
+
+---
+
+## Docker 部署
+
+```bash
+docker-compose up -d
+```
+
+服务端将监听 `8080` 端口，Lighthouse 监听 `4242` UDP。
+
+---
+
+## License
+
+MIT

@@ -13,6 +13,7 @@ pub struct AppState {
     /// Current peer list built from nebula stdout parsing
     pub peers: Arc<Mutex<Vec<PeerInfo>>>,
     pub close_behavior: Arc<Mutex<String>>,
+    pub force_relay: Arc<Mutex<bool>>,
 }
 
 impl AppState {
@@ -25,6 +26,7 @@ impl AppState {
             peer_last_bytes: Arc::new(Mutex::new(HashMap::new())),
             peers: Arc::new(Mutex::new(Vec::new())),
             close_behavior: Arc::new(Mutex::new("minimize".to_string())),
+            force_relay: Arc::new(Mutex::new(false)),
         }
     }
 }

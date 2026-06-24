@@ -212,6 +212,9 @@ fn extract_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 
 #[tauri::command]
 pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, request: JoinRequest) -> Result<String, String> {
+    let force_relay = request.force_relay;
+    *state.force_relay.lock().map_err(|e| e.to_string())? = force_relay;
+
     let kp = generate_keypair()?;
     let api_url = format!("{}/api/v1/join", request.server_url.trim_end_matches('/'));
     let client = reqwest::Client::new();
@@ -236,12 +239,14 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
 
     let lh_nb_ip = &d.lighthouse_nebula_ip;
     let lh_addr = format!("{}:{}", d.lighthouse_ip, d.lighthouse_port);
+    let punchy_punch = if force_relay { "false" } else { "true" };
+    let punchy_respond = if force_relay { "false" } else { "true" };
     let yml = format!(
         "pki:\n  ca: \"{}\"\n  cert: \"{}\"\n  key: \"{}\"\n\
          static_host_map:\n  \"{}\": [\"{}\"]\n\
          lighthouse:\n  am_lighthouse: false\n  interval: 60\n  hosts:\n    - \"{}\"\n\
          listen:\n  host: 0.0.0.0\n  port: 0\n\
-         punchy:\n  punch: true\n  respond: true\n\
+         punchy:\n  punch: {}\n  respond: {}\n\
          relay:\n  am_relay: false\n  use_relays: true\n\
          tun:\n  disabled: false\n  dev: {}\n  drop_local_broadcast: false\n  drop_multicast: false\n  tx_queue: 500\n  mtu: 1300\n\
          logging:\n  level: debug\n  format: text\n  file: \"{}\"\n\
@@ -251,6 +256,7 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         key_p.to_string_lossy().replace('\\', "/"),
         lh_nb_ip, lh_addr,
         lh_nb_ip,
+        punchy_punch, punchy_respond,
         TUN_DEV,
         cfg.join("nebula.log").to_string_lossy().replace('\\', "/"),
     );
@@ -291,7 +297,7 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
                     let _ = app_handle2.emit("nebula-log", serde_json::json!({ "level": "info", "msg": &line }));
                     // Parse for peer information
                     if let Some(event) = parse_nebula_line(&line) {
-                        update_peers(&peers_state, event);
+                        update_peers(&peers_state, event, force_relay);
                         // Emit updated peer list
                         if let Ok(peers) = peers_state.lock() {
                             let _ = app_handle2.emit("peers-updated", serde_json::json!(&*peers));
@@ -428,7 +434,7 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
 /// Update the shared peer list based on a parsed nebula log event
 fn is_lighthouse(ip: &str) -> bool { ip.starts_with("10.168.255.") }
 
-fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: NebulaLogEvent) {
+fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: NebulaLogEvent, force_relay: bool) {
     if let Ok(mut peers) = peers_state.lock() {
         match event {
             NebulaLogEvent::HostmapAdded { vpn_ip } => {
@@ -437,7 +443,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                     peers.push(PeerInfo {
                         vpn_ip,
                         hostname: String::new(),
-                        connection_type: "unknown".to_string(),
+                        connection_type: if force_relay { "relay".to_string() } else { "unknown".to_string() },
                         state: "alive".to_string(),
                         latency_ms: None,
                         rx_bytes: 0, tx_bytes: 0,
@@ -450,7 +456,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                 if is_lighthouse(&vpn_ip) { return; }
                 if let Some(peer) = peers.iter_mut().find(|p| p.vpn_ip == vpn_ip) {
                     if !cert_name.is_empty() { peer.hostname = cert_name; }
-                    if peer.connection_type != "relay" { peer.connection_type = method.to_string(); }
+                    if !force_relay && peer.connection_type != "relay" { peer.connection_type = method.to_string(); }
                     peer.state = state;
                     peer.local_index = local_index;
                     peer.remote_index = remote_index;
@@ -458,7 +464,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                     peers.push(PeerInfo {
                         vpn_ip,
                         hostname: cert_name,
-                        connection_type: method,
+                        connection_type: if force_relay { "relay".to_string() } else { method },
                         state,
                         latency_ms: None,
                         rx_bytes: 0, tx_bytes: 0,
@@ -526,6 +532,7 @@ pub fn disconnect_network(state: State<AppState>) -> Result<(), String> {
     *state.network_stats.lock().map_err(|e| e.to_string())? = NetworkStats::default();
     *state.peers.lock().map_err(|e| e.to_string())? = Vec::new();
     *state.peer_last_bytes.lock().map_err(|e| e.to_string())? = HashMap::new();
+    *state.force_relay.lock().map_err(|e| e.to_string())? = false;
     Ok(())
 }
 

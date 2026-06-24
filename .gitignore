@@ -11,6 +11,10 @@ dependency-reduced-pom.xml
 .gradle/
 build/
 
+# Node
+node_modules/
+.vite/
+
 # IDE
 .idea/
 *.iml
@@ -23,16 +27,11 @@ build/
 .DS_Store
 Thumbs.db
 
-# Documentation
-*.md
-!README.md
+# Rust build artifacts
+**/target/
 
-# Distribution
-dist*/
-
-# Rust
-target*/
-Cargo.lock
+# Frontend build output
+**/dist/
 
 # Logs
 *.log
@@ -41,11 +40,10 @@ Cargo.lock
 *.db
 *.db-journal
 
-# Certificates & Keys
+# Certificates & Keys (security — never commit private keys)
 *.key
 *.crt
 ca/
 
-# Deploy
-deploy.sh
-EZNebula-*.exe
+# Environment secrets
+.env

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow"
 
-export interface JoinRequest { server_url: string; group_name: string; join_token: string; client_name: string }
+export interface JoinRequest { server_url: string; group_name: string; join_token: string; client_name: string; force_relay?: boolean }
 export interface NetworkStatus { connected: boolean; virtual_ip?: string; group_name?: string; uptime_seconds: number }
 export interface NetworkStats { rx_bytes: number; tx_bytes: number; rx_speed: number; tx_speed: number }
 export interface ServerEntry { id: string; name: string; address: string; port: number; default_group: string; default_device: string }
