@@ -47,3 +47,6 @@ ca/
 
 # Environment secrets
 .env
+
+# Built executables (users download from Releases)
+EZNebula-*.exe
