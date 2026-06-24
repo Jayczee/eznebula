@@ -1,4 +1,4 @@
-# EZNebula
+# <img src="eznebula-frontend/src-tauri/icons/128x128.png" width="32" height="32" alt=""> EZNebula
 
 基于 [Nebula](https://github.com/slackhq/nebula) 的现代化极简虚拟局域网客户端，一键组建安全的 P2P 加密网络。
 

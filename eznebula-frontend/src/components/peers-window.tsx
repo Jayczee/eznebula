@@ -67,7 +67,7 @@ export default function PeersWindow() {
                 等待其他客户端上线...
               </p>
             )}
-            {peers.map((peer) => (
+            {peers.filter(p => p.state !== "testing").map((peer) => (
               <div key={peer.vpn_ip} className="p-2 border rounded-md space-y-1.5">
                 {/* 头部: 名称 + IP + 状态 */}
                 <div className="flex items-center justify-between">

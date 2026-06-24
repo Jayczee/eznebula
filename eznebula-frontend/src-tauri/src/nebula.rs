@@ -161,9 +161,12 @@ fn parse_nebula_line(line: &str) -> Option<NebulaLogEvent> {
     }
     // Detect relay test packets (indicates relay fallback after P2P failure)
     if line.contains("Sending a nebula test packet to vpn addr") {
-        if let Some(vpn_ip) = line.split("vpn addr ").nth(1) {
-            let vpn_ip = vpn_ip.trim().to_string();
-            return Some(NebulaLogEvent::RelayTest { vpn_ip });
+        if let Some(rest) = line.split("vpn addr ").nth(1) {
+            // Take the first whitespace-delimited token and clean it
+            let raw = rest.split_whitespace().next().unwrap_or("");
+            if let Some(vpn_ip) = clean_ip(raw) {
+                return Some(NebulaLogEvent::RelayTest { vpn_ip });
+            }
         }
     }
     // P2P handshake timeout → connection will use relay
@@ -183,15 +186,50 @@ enum NebulaLogEvent {
 }
 
 fn extract_first_vpn_addr(line: &str) -> Option<String> {
-    // vpnAddrs="[10.168.4.21]" or vpnAddrs:[10.168.4.21]
+    // vpnAddrs="[10.168.4.21]" or vpnAddrs:[10.168.4.21] (may contain multiple IPs)
     if let Some(start) = line.find("vpnAddrs") {
         let rest = &line[start..];
         if let Some(bracket) = rest.find('[') {
             let after = &rest[bracket + 1..];
             if let Some(end) = after.find(']') {
-                let ip = after[..end].trim().to_string();
-                if !ip.is_empty() { return Some(ip); }
+                // Take only the first IP before comma or space
+                let raw = &after[..end];
+                let first_ip = raw.split(|c: char| c == ',' || c == ' ').next().unwrap_or("").trim();
+                if let Some(ip) = clean_ip(first_ip) { return Some(ip); }
             }
+        }
+    }
+    // "Handshake timed out" lines use vpnIp=10.168.4.21 format
+    if let Some(vpn_ip) = extract_field(line, "vpnIp=") {
+        if let Some(ip) = clean_ip(vpn_ip) { return Some(ip); }
+    }
+    // Generic: search for any 10.x.x.x IP pattern in the line
+    if let Some(ip) = extract_10_ip(line) {
+        return Some(ip);
+    }
+    None
+}
+
+/// Clean and validate a candidate IP string (strip quotes, commas, trailing garbage)
+fn clean_ip(raw: &str) -> Option<String> {
+    let s = raw.trim()
+        .trim_matches('"')
+        .trim_matches(',')
+        .trim_matches('.')
+        .trim();
+    let parts: Vec<&str> = s.split('.').collect();
+    if parts.len() == 4 && parts.iter().all(|p| p.parse::<u8>().is_ok()) {
+        Some(s.to_string())
+    } else {
+        None
+    }
+}
+
+/// Extract a 10.x.x.x Nebula overlay IP from a string
+fn extract_10_ip(line: &str) -> Option<String> {
+    for word in line.split(|c: char| c == ' ' || c == '=' || c == '[' || c == ']' || c == '"' || c == ',') {
+        if let Some(ip) = clean_ip(word) {
+            if ip.starts_with("10.") { return Some(ip); }
         }
     }
     None
@@ -200,9 +238,13 @@ fn extract_first_vpn_addr(line: &str) -> Option<String> {
 fn extract_field<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     if let Some(pos) = line.find(key) {
         let rest = &line[pos + key.len()..];
-        // Value is until next space or comma
+        // Value is until next space, comma, or closing quote
         let end = rest.find(|c: char| c == ' ' || c == ',').unwrap_or(rest.len());
-        Some(&rest[..end])
+        let val = &rest[..end];
+        // Strip surrounding double quotes if present
+        let val = val.strip_prefix('"').unwrap_or(val);
+        let val = val.strip_suffix('"').unwrap_or(val);
+        Some(val)
     } else {
         None
     }
@@ -428,6 +470,10 @@ pub async fn join_network(app: tauri::AppHandle, state: State<'_, AppState>, req
         s.uptime_seconds = 0;
     })?;
     state.connection_time.lock().map_err(|e| e.to_string())?.replace(Instant::now());
+    // Update tray tooltip
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(format!("EZNebula — {} | {}", group_name, d.virtual_ip_with_cidr)));
+    }
     Ok(format!("Connected: {}", d.virtual_ip_with_cidr))
 }
 
@@ -456,7 +502,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                 if is_lighthouse(&vpn_ip) { return; }
                 if let Some(peer) = peers.iter_mut().find(|p| p.vpn_ip == vpn_ip) {
                     if !cert_name.is_empty() { peer.hostname = cert_name; }
-                    if !force_relay && peer.connection_type != "relay" { peer.connection_type = method.to_string(); }
+                    if !force_relay && peer.connection_type != "relay" && state == "alive" { peer.connection_type = method.to_string(); }
                     peer.state = state;
                     peer.local_index = local_index;
                     peer.remote_index = remote_index;
@@ -464,7 +510,7 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                     peers.push(PeerInfo {
                         vpn_ip,
                         hostname: cert_name,
-                        connection_type: if force_relay { "relay".to_string() } else { method },
+                        connection_type: if force_relay { "relay".to_string() } else if state == "alive" { method } else { "unknown".to_string() },
                         state,
                         latency_ms: None,
                         rx_bytes: 0, tx_bytes: 0,
@@ -474,13 +520,39 @@ fn update_peers(peers_state: &Arc<std::sync::Mutex<Vec<PeerInfo>>>, event: Nebul
                 }
             }
             NebulaLogEvent::P2pTimeout { vpn_ip } => {
+                // P2P handshake failed, mark the connection as relay.
+                // Create peer entry if it doesn't exist yet (event may fire before HostmapAdded)
                 if let Some(peer) = peers.iter_mut().find(|p| p.vpn_ip == vpn_ip) {
-                    peer.connection_type = "relay".to_string(); // P2P failed, will use relay
+                    peer.connection_type = "relay".to_string();
+                } else if !is_lighthouse(&vpn_ip) {
+                    peers.push(PeerInfo {
+                        vpn_ip: vpn_ip.clone(),
+                        hostname: String::new(),
+                        connection_type: "relay".to_string(),
+                        state: "testing".to_string(),
+                        latency_ms: None,
+                        rx_bytes: 0, tx_bytes: 0,
+                        rx_speed: 0.0, tx_speed: 0.0,
+                        local_index: 0, remote_index: 0,
+                    });
                 }
             }
             NebulaLogEvent::RelayTest { vpn_ip } => {
+                // Relay test packet sent, this peer is definitely using relay.
+                // Create peer entry if it doesn't exist yet.
                 if let Some(peer) = peers.iter_mut().find(|p| p.vpn_ip == vpn_ip) {
                     peer.connection_type = "relay".to_string();
+                } else if !is_lighthouse(&vpn_ip) {
+                    peers.push(PeerInfo {
+                        vpn_ip: vpn_ip.clone(),
+                        hostname: String::new(),
+                        connection_type: "relay".to_string(),
+                        state: "testing".to_string(),
+                        latency_ms: None,
+                        rx_bytes: 0, tx_bytes: 0,
+                        rx_speed: 0.0, tx_speed: 0.0,
+                        local_index: 0, remote_index: 0,
+                    });
                 }
             }
         }
@@ -512,7 +584,7 @@ fn measure_latency(vpn_ip: &str) -> Option<f64> {
 }
 
 #[tauri::command]
-pub fn disconnect_network(state: State<AppState>) -> Result<(), String> {
+pub fn disconnect_network(app: tauri::AppHandle, state: State<AppState>) -> Result<(), String> {
     // Send leave notification before killing nebula
     let leave_info = {
         let s = state.network_status.lock().map_err(|e| e.to_string())?;
@@ -533,6 +605,10 @@ pub fn disconnect_network(state: State<AppState>) -> Result<(), String> {
     *state.peers.lock().map_err(|e| e.to_string())? = Vec::new();
     *state.peer_last_bytes.lock().map_err(|e| e.to_string())? = HashMap::new();
     *state.force_relay.lock().map_err(|e| e.to_string())? = false;
+    // Reset tray tooltip
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some("EZNebula - 未连接"));
+    }
     Ok(())
 }
 
